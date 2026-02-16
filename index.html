@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>OMDb proxy – test UI</title>
+	<style>
+		* { box-sizing: border-box; }
+		body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 1.5rem; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+		h1 { font-size: 1.25rem; margin: 0 0 1rem 0; }
+		input[type="text"], input[type="password"], button { padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid #475569; font-size: 0.9rem; }
+		input { background: #1e293b; color: #e2e8f0; width: 100%; }
+		button { background: #6366f1; color: white; border: none; cursor: pointer; font-weight: 600; }
+		button:hover { background: #4f46e5; }
+		button.secondary { background: #334155; }
+		button.secondary:hover { background: #475569; }
+		#login-box { background: #1e293b; padding: 1.5rem; border-radius: 12px; max-width: 320px; }
+		#login-box label { display: block; margin-bottom: 0.5rem; font-size: 0.85rem; color: #94a3b8; }
+		#login-box input { margin-bottom: 1rem; }
+		#app { display: none; }
+		#app.unlocked { display: block; }
+		.search-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+		.search-row input { flex: 1; }
+		.error { color: #f87171; font-size: 0.9rem; margin-top: 0.5rem; }
+		.results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+		.result-card { background: #1e293b; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.15s; border: 1px solid #334155; }
+		.result-card:hover { transform: scale(1.02); border-color: #6366f1; }
+		.result-card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; background: #334155; }
+		.result-card .meta { padding: 0.5rem; font-size: 0.8rem; }
+		.result-card .title { font-weight: 600; margin-bottom: 0.2rem; line-height: 1.2; }
+		.result-card .year { color: #94a3b8; }
+		#detail { margin-top: 1.5rem; padding: 1rem; background: #1e293b; border-radius: 12px; display: none; }
+		#detail.visible { display: block; }
+		#detail .detail-header { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+		#detail .detail-poster { width: 160px; border-radius: 8px; flex-shrink: 0; }
+		#detail .detail-poster img { width: 100%; border-radius: 8px; }
+		#detail .detail-info { flex: 1; min-width: 200px; }
+		#detail h2 { margin: 0 0 0.5rem 0; font-size: 1.25rem; }
+		#detail .detail-meta { color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.75rem; }
+		#detail .detail-plot { font-size: 0.9rem; line-height: 1.5; }
+		.hint { color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem; }
+		#status { min-height: 1.5rem; font-size: 0.85rem; color: #94a3b8; }
+	</style>
+</head>
+<body>
+	<div id="login-box">
+		<h1>OMDb proxy – test UI</h1>
+		<p class="hint">Enter the UI secret to access the test panel.</p>
+		<form id="login-form">
+			<label for="secret">Secret</label>
+			<input type="password" id="secret" name="secret" placeholder="UI secret" autocomplete="off">
+			<div id="login-error" class="error"></div>
+			<button type="submit">Unlock</button>
+		</form>
+	</div>
+
+	<div id="app">
+		<h1>OMDb proxy – test UI</h1>
+		<div class="search-row">
+			<input type="text" id="search-input" placeholder="Search movies or series…" autocomplete="off">
+			<button type="button" id="search-btn">Search</button>
+			<button type="button" id="logout-btn" class="secondary">Lock</button>
+		</div>
+		<div id="status"></div>
+		<div id="results" class="results-grid"></div>
+		<div id="detail">
+			<div class="detail-header">
+				<div class="detail-poster"></div>
+				<div class="detail-info">
+					<h2 id="detail-title"></h2>
+					<div class="detail-meta" id="detail-meta"></div>
+					<div class="detail-plot" id="detail-plot"></div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		var UI_STORAGE = 'omdb_ui_unlocked';
+		var base = window.location.origin;
+
+		function setStatus(msg) {
+			var el = document.getElementById('status');
+			if (el) el.textContent = msg || '';
+		}
+
+		function checkUnlock() {
+			var q = new URLSearchParams(window.location.search);
+			var secret = q.get('secret');
+			if (secret) {
+				document.getElementById('secret').value = secret;
+				document.getElementById('login-form').dispatchEvent(new Event('submit', { cancelable: true }));
+				return;
+			}
+			if (sessionStorage.getItem(UI_STORAGE) === '1') {
+				document.getElementById('login-box').style.display = 'none';
+				document.getElementById('app').classList.add('unlocked');
+			}
+		}
+
+		document.getElementById('login-form').addEventListener('submit', function (e) {
+			e.preventDefault();
+			var secret = document.getElementById('secret').value.trim();
+			var errEl = document.getElementById('login-error');
+			errEl.textContent = '';
+			if (!secret) { errEl.textContent = 'Enter the secret.'; return; }
+			fetch(base + '/api/auth?secret=' + encodeURIComponent(secret))
+				.then(function (r) {
+					if (r.ok) {
+						sessionStorage.setItem(UI_STORAGE, '1');
+						document.getElementById('login-box').style.display = 'none';
+						document.getElementById('app').classList.add('unlocked');
+					} else {
+						errEl.textContent = 'Invalid secret.';
+					}
+				})
+				.catch(function () { errEl.textContent = 'Network error.'; });
+		});
+
+		document.getElementById('logout-btn').addEventListener('click', function () {
+			sessionStorage.removeItem(UI_STORAGE);
+			location.reload();
+		});
+
+		function search() {
+			var q = document.getElementById('search-input').value.trim();
+			if (!q) { setStatus('Enter a search term.'); return; }
+			setStatus('Searching…');
+			document.getElementById('results').innerHTML = '';
+			document.getElementById('detail').classList.remove('visible');
+			fetch(base + '/api/omdb?s=' + encodeURIComponent(q))
+				.then(function (r) { return r.json(); })
+				.then(function (data) {
+					var list = (data && data.results) ? data.results : [];
+					if (data && data.error) { setStatus(data.error); return; }
+					setStatus(list.length ? 'Found ' + list.length + ' results.' : 'No results.');
+					var grid = document.getElementById('results');
+					list.forEach(function (item) {
+						var card = document.createElement('div');
+						card.className = 'result-card';
+						var img = item.Poster && item.Poster.indexOf('http') === 0
+							? '<img src="' + item.Poster.replace(/"/g, '&quot;') + '" alt="" loading="lazy">'
+							: '<div style="aspect-ratio:2/3;background:#334155;"></div>';
+						card.innerHTML = img + '<div class="meta"><div class="title">' + (item.Title || '').replace(/</g, '&lt;') + '</div><div class="year">' + (item.Year || '').replace(/</g, '&lt;') + '</div></div>';
+						card.addEventListener('click', function () { showDetail(item.imdbID); });
+						grid.appendChild(card);
+					});
+				})
+				.catch(function () { setStatus('Network error.'); });
+		}
+
+		function showDetail(imdbID) {
+			if (!imdbID) return;
+			setStatus('Loading…');
+			document.getElementById('detail').classList.remove('visible');
+			fetch(base + '/api/omdb?i=' + encodeURIComponent(imdbID))
+				.then(function (r) { return r.json(); })
+				.then(function (data) {
+					if (data && data.error) { setStatus(data.error); return; }
+					setStatus('');
+					var d = document.getElementById('detail');
+					var poster = (data.Poster && data.Poster.indexOf('http') === 0)
+						? '<img src="' + data.Poster.replace(/"/g, '&quot;') + '" alt="">'
+						: '';
+					document.querySelector('#detail .detail-poster').innerHTML = poster;
+					document.getElementById('detail-title').textContent = (data.Title || '') + (data.Year ? ' (' + data.Year + ')' : '');
+					var meta = [];
+					if (data.Rated && data.Rated !== 'N/A') meta.push('Rated: ' + data.Rated);
+					if (data.Runtime && data.Runtime !== 'N/A') meta.push(data.Runtime);
+					if (data.Genre && data.Genre !== 'N/A') meta.push(data.Genre);
+					if (data.imdbRating && data.imdbRating !== 'N/A') meta.push('IMDb: ' + data.imdbRating);
+					document.getElementById('detail-meta').textContent = meta.join(' · ');
+					document.getElementById('detail-plot').textContent = (data.Plot && data.Plot !== 'N/A') ? data.Plot : '';
+					d.classList.add('visible');
+				})
+				.catch(function () { setStatus('Network error.'); });
+		}
+
+		document.getElementById('search-btn').addEventListener('click', search);
+		document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') search(); });
+
+		checkUnlock();
+	</script>
+</body>
+</html>

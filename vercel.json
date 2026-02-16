@@ -1,9 +1,13 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/omdb.js", "use": "@vercel/node" }
+    { "src": "api/omdb.js", "use": "@vercel/node" },
+    { "src": "api/auth.js", "use": "@vercel/node" },
+    { "src": "index.html", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/api/omdb(.*)", "dest": "/api/omdb.js" }
+    { "src": "/api/omdb(.*)", "dest": "/api/omdb.js" },
+    { "src": "/api/auth", "dest": "/api/auth.js" },
+    { "src": "/", "dest": "/index.html" }
   ]
 }

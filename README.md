@@ -16,7 +16,9 @@ Minimal serverless backend that calls OMDb with your API key and returns only sa
 5. Before deploying, open **Settings → Environment Variables** and add:
    - **Name:** `OMDB_API_KEY`  
    - **Value:** your key from [omdbapi.com](https://www.omdbapi.com/)
-6. (Optional) To restrict who can call the API:
+   - **Name:** `UI_SECRET`  
+   - **Value:** a password of your choice (used to unlock the test UI at `/`).
+6. (Optional) To restrict who can call the OMDb API:
    - **Name:** `ALLOWED_ORIGINS`  
    - **Value:** your site origin(s), comma-separated, e.g.  
      `https://yourusername.github.io,https://your-custom-domain.com`
@@ -39,3 +41,14 @@ In `index.html` (and in `playground.html` if you use the IMDb flyout there), add
 Replace `https://omdb-proxy-xxxx.vercel.app` with your actual Vercel URL (no trailing slash).
 
 Your main repo never contains the key; only this small proxy repo is deployed to Vercel with the env var.
+
+---
+
+## Test UI (secret-protected)
+
+The repo includes a minimal test UI at the root URL (`https://your-app.vercel.app/`).
+
+- **Unlock:** Set env var **`UI_SECRET`** (any string). Open `/` and enter that value to unlock the UI. You can also use `?secret=YOUR_SECRET` in the URL once.
+- **Use:** Search movies/series → see a **grid of posters** (thumbnails + title + year). Click a card to load **details** (poster, plot, rating, etc.). The same `/api/omdb` endpoints (search and by-ID) are used so you can verify the API.
+- **Lock:** Click “Lock” to hide the UI again (or close the tab; the secret is only in `sessionStorage` for the session).
+- Your main site or bot keeps calling `/api/omdb` as before; no secret is required for the API. The secret only gates the test UI.
