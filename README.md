@@ -11,8 +11,8 @@ Minimal serverless backend that calls OMDb with your API key and returns only sa
 
 1. Go to [vercel.com](https://vercel.com) and sign in with GitHub.
 2. **Import** the repo (this folder as its own repo, or the repo that contains it).
-3. **Important:** If this folder is inside a monorepo (e.g. you have `playground-serveless/`, `analytics-lab/` in one repo), set **Root Directory** to the folder that contains `api/` — e.g. `playground-serveless`. Otherwise Vercel looks for `api/` at the repo root and returns **404 NOT_FOUND**.
-4. **Build commands:** This project has no build step and no `package.json`. In **Settings → General**, set **Build Command** and **Install Command** to *empty* (leave them blank, or override with a single space). That way Vercel won’t run `npm install` / `npm run build` and will just deploy the `api/` function.
+3. **Root Directory (critical):** If this folder lives inside a monorepo, set **Settings → General → Root Directory** to exactly the folder that contains `api/` (e.g. `playground-serveless` — check spelling). The deployed root must contain `api/omdb.js`, `package.json`, and `vercel.json`. Save and redeploy.
+4. **Build / Install:** You can leave **Build Command** and **Install Command** empty. The included `vercel.json` tells Vercel to build only the API function.
 5. Before deploying, open **Settings → Environment Variables** and add:
    - **Name:** `OMDB_API_KEY`  
    - **Value:** your key from [omdbapi.com](https://www.omdbapi.com/)
@@ -22,7 +22,9 @@ Minimal serverless backend that calls OMDb with your API key and returns only sa
      `https://yourusername.github.io,https://your-custom-domain.com`
 7. Deploy. Note the URL (e.g. `https://omdb-proxy-xxxx.vercel.app`).
 8. **Test:** Open `https://your-app.vercel.app/api/omdb?t=Inception` in the browser. You should get JSON like `{"poster":"https://..."}`.
-9. **If you get 404 NOT_FOUND:** Vercel is not seeing your `api/` folder. In the Vercel project go to **Settings → General → Root Directory**: set it to the folder that **contains** the `api` folder (e.g. `playground-serveless` if this code lives in a subfolder of your repo). Save and **redeploy**.
+9. **If you still get 404 NOT_FOUND:**  
+   - **Option A:** Create a **new repo** whose root contains only: `api/` (with `omdb.js` inside), `package.json`, `vercel.json`, and this README. Push that repo and import it on Vercel **without** setting Root Directory. Then the API lives at `/api/omdb`.  
+   - **Option B:** In the current project, confirm **Root Directory** is exactly the folder name (e.g. `playground-serveless`). In the repo, that folder must contain `api/omdb.js`, `vercel.json`, and `package.json`. Redeploy after changing settings.
 
 ## 3. Point your main site to this backend
 

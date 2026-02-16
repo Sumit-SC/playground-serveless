@@ -1,0 +1,6 @@
+{
+  "name": "omdb-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serverless OMDb proxy — key stays on server"
+}

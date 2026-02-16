@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/omdb.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/omdb(.*)", "dest": "/api/omdb.js$1" }
+  ]
+}
