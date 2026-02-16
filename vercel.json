@@ -4,6 +4,6 @@
     { "src": "api/omdb.js", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/api/omdb(.*)", "dest": "/api/omdb.js$1" }
+    { "src": "/api/omdb(.*)", "dest": "/api/omdb.js" }
   ]
 }
