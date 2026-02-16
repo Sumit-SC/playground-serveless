@@ -45,6 +45,13 @@
 		#detail .detail-actions { margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
 		#detail .detail-actions a { color: #818cf8; text-decoration: none; font-size: 0.9rem; }
 		#detail .detail-actions a:hover { text-decoration: underline; }
+		.cinematerial-section { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #334155; }
+		.cinematerial-section h3 { font-size: 1rem; margin: 0 0 0.5rem 0; color: #94a3b8; }
+		.cinematerial-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.75rem; }
+		.cinematerial-actions a { color: #818cf8; font-size: 0.9rem; }
+		.posters-cinematerial { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem; }
+		.posters-cinematerial img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 6px; background: #334155; }
+		.posters-cinematerial .poster-placeholder { aspect-ratio: 2/3; background: #334155; border-radius: 6px; }
 		.api-info { margin-top: 1.5rem; padding: 1rem; background: #1e293b; border-radius: 8px; font-size: 0.85rem; color: #94a3b8; border: 1px solid #334155; }
 		.api-info strong { color: #e2e8f0; }
 		.api-info a { color: #818cf8; }
@@ -72,6 +79,10 @@
 			<button type="button" id="search-btn">Search</button>
 			<button type="button" id="logout-btn" class="secondary">Lock</button>
 		</div>
+		<p class="hint" style="margin-top:0.25rem;">If the API requires a key, set it below so the test UI can call it.</p>
+		<div class="search-row" style="max-width:320px;">
+			<input type="password" id="api-key-input" placeholder="API key (optional)" autocomplete="off">
+		</div>
 		<div id="status"></div>
 		<div id="results" class="results-grid"></div>
 		<div id="detail">
@@ -83,19 +94,53 @@
 					<div class="detail-plot" id="detail-plot"></div>
 					<div class="detail-grid" id="detail-grid"></div>
 					<div class="detail-actions" id="detail-actions"></div>
+					<div class="cinematerial-section" id="cinematerial-section">
+						<h3>Poster sources</h3>
+						<div class="cinematerial-actions">
+							<a href="#" id="cinematerial-link" target="_blank" rel="noopener">CineMaterial</a>
+							<button type="button" id="cinematerial-fetch-btn" class="secondary">Fetch / refresh posters</button>
+							<a href="#" id="theposterdb-link" target="_blank" rel="noopener">ThePosterDB</a>
+						</div>
+						<p class="hint" style="margin:0.25rem 0 0.5rem 0;">CineMaterial: more posters, direct by IMDb ID. ThePosterDB: different coverage (search by title).</p>
+						<div class="posters-cinematerial" id="posters-cinematerial"></div>
+					</div>
 				</div>
 			</div>
 		</div>
 		<div class="api-info" id="api-info">
 			<strong>API base (for your bot or site):</strong> <code id="api-base"></code><br>
-			No key needed from the client — the key is set on the server (Vercel env <code>OMDB_API_KEY</code>).<br>
-			Test: <a href="#" id="api-test-poster">Poster by title</a> · <a href="#" id="api-test-search">Search</a> · <a href="#" id="api-test-id">By ID</a>
+			Key is on the server (Vercel <code>OMDB_API_KEY</code>). If you set <code>API_SECRET</code>, use the “API key” field above.<br>
+			Test (open in new tab; add <code>X-API-Key</code> if API is protected): <a href="#" id="api-test-poster">Poster by title</a> · <a href="#" id="api-test-search">Search</a> · <a href="#" id="api-test-id">By ID</a>
 		</div>
 	</div>
 
 	<script>
 		var UI_STORAGE = 'omdb_ui_unlocked';
+		var API_KEY_STORAGE = 'omdb_ui_api_key';
 		var base = window.location.origin;
+		var currentDetail = { imdbID: '', title: '', type: 'movie' };
+
+		function slugify(s) {
+			if (!s) return 'title';
+			return String(s).trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'title';
+		}
+		function cinematerialPageUrl(imdbId, title, type) {
+			var id = (imdbId || '').replace(/^tt/i, '');
+			if (!/^\d+$/.test(id)) return 'https://www.cinematerial.com/';
+			var path = type === 'series' ? 'tv' : 'movies';
+			return 'https://www.cinematerial.com/' + path + '/' + slugify(title) + '-i' + id;
+		}
+		function theposterdbSearchUrl(title, type) {
+			var section = type === 'series' ? 'shows' : 'movies';
+			var term = encodeURIComponent((title || '').trim() || '');
+			return term ? 'https://theposterdb.com/search?term=' + term + '&section=' + section : 'https://theposterdb.com/search';
+		}
+
+		function getApiKeyHeaders() {
+			var key = (document.getElementById('api-key-input') && document.getElementById('api-key-input').value.trim()) || sessionStorage.getItem(API_KEY_STORAGE) || '';
+			if (!key) return {};
+			return { 'X-API-Key': key };
+		}
 
 		function setStatus(msg) {
 			var el = document.getElementById('status');
@@ -146,7 +191,7 @@
 			setStatus('Searching…');
 			document.getElementById('results').innerHTML = '';
 			document.getElementById('detail').classList.remove('visible');
-			fetch(base + '/api/omdb?s=' + encodeURIComponent(q))
+			fetch(base + '/api/omdb?s=' + encodeURIComponent(q), { headers: getApiKeyHeaders() })
 				.then(function (r) { return r.json(); })
 				.then(function (data) {
 					var list = (data && data.results) ? data.results : [];
@@ -177,7 +222,7 @@
 			if (!imdbID) return;
 			setStatus('Loading…');
 			document.getElementById('detail').classList.remove('visible');
-			fetch(base + '/api/omdb?i=' + encodeURIComponent(imdbID))
+			fetch(base + '/api/omdb?i=' + encodeURIComponent(imdbID), { headers: getApiKeyHeaders() })
 				.then(function (r) { return r.json(); })
 				.then(function (data) {
 					if (data && data.error) { setStatus(data.error); return; }
@@ -206,12 +251,49 @@
 					actions.innerHTML = '<a href="' + detailUrl + '" target="_blank" rel="noopener">Open in new tab</a>' +
 						(data.imdbID ? '<a href="https://www.imdb.com/title/' + esc(data.imdbID) + '/" target="_blank" rel="noopener">View on IMDb</a>' : '');
 
+					currentDetail = { imdbID: data.imdbID || imdbID, title: data.Title || '', type: (data.Type || 'movie').toLowerCase() };
+					if (currentDetail.type === 'series') currentDetail.type = 'series';
+					else currentDetail.type = 'movie';
+					document.getElementById('cinematerial-link').href = cinematerialPageUrl(currentDetail.imdbID, currentDetail.title, currentDetail.type);
+					document.getElementById('theposterdb-link').href = theposterdbSearchUrl(currentDetail.title, currentDetail.type);
+					document.getElementById('posters-cinematerial').innerHTML = '';
+
 					d.classList.add('visible');
 					d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 				})
 				.catch(function () { setStatus('Network error.'); });
 		}
 
+		function fetchCineMaterial() {
+			var el = document.getElementById('posters-cinematerial');
+			if (!currentDetail.imdbID) { el.innerHTML = '<span class="hint">Select a title first.</span>'; return; }
+			el.innerHTML = '<span class="hint">Loading…</span>';
+			var q = 'i=' + encodeURIComponent(currentDetail.imdbID) + '&title=' + encodeURIComponent(currentDetail.title) + '&type=' + encodeURIComponent(currentDetail.type);
+			fetch(base + '/api/cinematerial?' + q, { headers: getApiKeyHeaders() })
+				.then(function (r) { return r.json(); })
+				.then(function (data) {
+					var list = (data && data.posters) ? data.posters : [];
+					if (data && data.error && list.length === 0) {
+						el.innerHTML = '<span class="hint">' + esc(data.error) + ' Use “Open on CineMaterial” to browse and filter on the site.</span>';
+						return;
+					}
+					if (list.length === 0) {
+						el.innerHTML = '<span class="hint">No poster URLs found on the page. Use “Open on CineMaterial” to view and filter posters there.</span>';
+						return;
+					}
+					var html = '';
+					list.forEach(function (p) {
+						var u = (p && p.url) ? p.url : p;
+						html += '<img src="' + esc(u) + '" alt="" loading="lazy">';
+					});
+					el.innerHTML = html;
+				})
+				.catch(function () {
+					el.innerHTML = '<span class="hint">Network error. Try again or open CineMaterial directly.</span>';
+				});
+		}
+
+		document.getElementById('cinematerial-fetch-btn').addEventListener('click', fetchCineMaterial);
 		document.getElementById('search-btn').addEventListener('click', search);
 		document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') search(); });
 
@@ -233,12 +315,21 @@
 
 		checkUnlock();
 		if (document.getElementById('app').classList.contains('unlocked')) {
+			var savedKey = sessionStorage.getItem(API_KEY_STORAGE);
+			if (savedKey && document.getElementById('api-key-input')) document.getElementById('api-key-input').value = savedKey;
 			initApiInfo();
 			checkDetailFromUrl();
 		}
+		document.getElementById('api-key-input').addEventListener('input', function () {
+			var v = this.value.trim();
+			if (v) sessionStorage.setItem(API_KEY_STORAGE, v);
+			else sessionStorage.removeItem(API_KEY_STORAGE);
+		});
 		document.getElementById('login-form').addEventListener('submit', function () {
 			setTimeout(function () {
 				if (document.getElementById('app').classList.contains('unlocked')) {
+					var savedKey = sessionStorage.getItem(API_KEY_STORAGE);
+					if (savedKey && document.getElementById('api-key-input')) document.getElementById('api-key-input').value = savedKey;
 					initApiInfo();
 					checkDetailFromUrl();
 				}

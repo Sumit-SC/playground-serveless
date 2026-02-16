@@ -18,10 +18,14 @@ Minimal serverless backend that calls OMDb with your API key and returns only sa
    - **Value:** your key from [omdbapi.com](https://www.omdbapi.com/)
    - **Name:** `UI_SECRET`  
    - **Value:** a password of your choice (used to unlock the test UI at `/`).
-6. (Optional) To restrict who can call the OMDb API:
+6. (Optional) To reduce API abuse (see [Preventing API abuse](#preventing-api-abuse) below):
    - **Name:** `ALLOWED_ORIGINS`  
    - **Value:** your site origin(s), comma-separated, e.g.  
      `https://yourusername.github.io,https://your-custom-domain.com`
+   - **Name:** `API_SECRET`  
+   - **Value:** a secret string; then only requests with header `X-API-Key: <this value>` are allowed (401 otherwise).
+   - **Name:** `RATE_LIMIT_PER_MINUTE`  
+   - **Value:** e.g. `60` — max requests per IP per minute (429 when exceeded).
 7. Deploy. Note the URL (e.g. `https://omdb-proxy-xxxx.vercel.app`).
 8. **Test:** Open `https://your-app.vercel.app/api/omdb?t=Inception` in the browser. You should get JSON like `{"poster":"https://..."}`.
 9. **If you get 404 NOT_FOUND (Code: NOT_FOUND):**  
@@ -51,7 +55,7 @@ Your main repo never contains the key; only this small proxy repo is deployed to
 The repo includes a minimal test UI at the root URL (`https://your-app.vercel.app/`).
 
 - **Unlock:** Set env var **`UI_SECRET`** (any string). Open `/` and enter that value to unlock the UI. You can also use `?secret=YOUR_SECRET` in the URL once.
-- **Use:** Search movies/series → see a **grid of posters** (thumbnails + title + year). **Click a card** to load full **details** (poster, plot, director, cast, awards, box office, etc.) and scroll to the detail panel. Use “Open in new tab” for a shareable link, or add `?i=tt0137523` to the URL to open a title by IMDb ID (after unlocking).
+- **Use:** Search movies/series → see a **grid of posters** (thumbnails + title + year). **Click a card** to load full **details** (poster, plot, director, cast, awards, box office, etc.) and scroll to the detail panel. In the detail view, **CineMaterial posters**: use “Open on CineMaterial” to open [CineMaterial](https://www.cinematerial.com/) for that title (URL uses IMDb ID, e.g. `i1375666`), or “Fetch / refresh posters” to load poster images via the scraper API. Use “Open in new tab” for a shareable link, or add `?i=tt0137523` to the URL to open a title by IMDb ID (after unlocking).
 - **Lock:** Click “Lock” to hide the UI again (or close the tab; the secret is only in `sessionStorage` for the session).
 - Your main site or bot keeps calling `/api/omdb` as before; no secret is required for the API. The secret only gates the test UI.
 
@@ -71,3 +75,35 @@ The repo includes a minimal test UI at the root URL (`https://your-app.vercel.ap
     `curl "https://YOUR-APP.vercel.app/api/omdb?s=batman"`  
     `curl "https://YOUR-APP.vercel.app/api/omdb?i=tt1375666"`  
   - You should get JSON (e.g. `{"poster":"https://..."}` for `?t=`, `{"results":[...]}` for `?s=`, and full detail for `?i=`).
+
+---
+
+## CineMaterial posters (scraper API)
+
+The app can fetch poster images from [CineMaterial](https://www.cinematerial.com/) using the **IMDb ID** you get from OMDb. CineMaterial uses the same ID with an `i` prefix (e.g. `tt1375666` → `i1375666`) in URLs like `https://www.cinematerial.com/movies/inception-i1375666`.
+
+- **Endpoint:** `GET /api/cinematerial?i=tt1375666&title=Inception&type=movie` (or `type=series` for TV). Returns `{ posters: [{ url }], pageUrl, posterPages }`.
+- **In the test UI:** Open a title’s detail, then use **“Open on CineMaterial”** to open that title on CineMaterial (where you can use their filters by country/category), or **“Fetch / refresh posters”** to load poster image URLs via the scraper.
+- **Use sparingly:** The scraper fetches the public CineMaterial page; respect their [terms](https://www.cinematerial.com/) and don’t hammer the endpoint.
+
+**ThePosterDB:** [ThePosterDB](https://theposterdb.com/) is linked in the detail view (“ThePosterDB”) as a second poster source; search is by title and section (movies/shows). They have different coverage (often fewer images than CineMaterial) and offer an [API](https://api.ratingposterdb.com/) with key for programmatic access if you need it.
+
+---
+
+## Preventing API abuse (is an open API safe?)
+
+**What “open” means:** If you don’t set `API_SECRET`, anyone who knows your API URL can call it. Your **OMDb key stays on the server** and is never sent to the client, so it’s not exposed. The main risk is **quota exhaustion**: OMDb free tier (e.g. 1,000 requests/day) and Vercel usage can be used up by someone hammering the endpoint.
+
+**Is it safe?** For a low-traffic personal project it’s often acceptable to leave the API open and rely on OMDb’s and Vercel’s limits. For anything you care about, add at least one of the protections below.
+
+**Options (use one or more):**
+
+| Method | Env var | What it does | Best for |
+|--------|---------|----------------|----------|
+| **CORS** | `ALLOWED_ORIGINS` | Only listed origins can call the API **from a browser**. Blocks other sites embedding your API in their pages. Does **not** stop curl, Postman, or bots (they don’t send Origin). | Limiting which websites can use your API in the browser. |
+| **API key** | `API_SECRET` | Every request must include header `X-API-Key: <your secret>`. Wrong or missing key → 401. Only your bot or main site (where you store the secret server-side or in a private env) should know it. | Restricting the API to your own app/bot. |
+| **Rate limit** | `RATE_LIMIT_PER_MINUTE` | Max requests per IP per minute (e.g. `60`). Excess → 429 Too Many Requests. Implemented in-memory per serverless instance; for strict limits across all instances use something like Vercel KV. | Throttling heavy or abusive callers. |
+
+**Recommendation:** Set **`ALLOWED_ORIGINS`** to your main site so random websites can’t use your API from the browser. If only your bot or server should call the API, set **`API_SECRET`** and send it as `X-API-Key` from your code. Add **`RATE_LIMIT_PER_MINUTE`** (e.g. 60) to cap burst traffic per IP.
+
+**If you set `API_SECRET`:** Your bot or main site must send `X-API-Key: <API_SECRET>` on every request. The test UI at `/` has an optional “API key” field; enter the same value as `API_SECRET` so the test UI can still call the API after you unlock it.

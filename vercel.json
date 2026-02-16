@@ -3,11 +3,13 @@
   "builds": [
     { "src": "api/omdb.js", "use": "@vercel/node" },
     { "src": "api/auth.js", "use": "@vercel/node" },
+    { "src": "api/cinematerial.js", "use": "@vercel/node" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/omdb(.*)", "dest": "/api/omdb.js" },
     { "src": "/api/auth", "dest": "/api/auth.js" },
+    { "src": "/api/cinematerial(.*)", "dest": "/api/cinematerial.js" },
     { "src": "/", "dest": "/index.html" }
   ]
 }
