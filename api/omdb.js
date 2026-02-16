@@ -84,8 +84,10 @@ module.exports = async function handler(req, res) {
 			}
 			const out = {
 				Title: data.Title || '', Year: data.Year || '', Rated: data.Rated || '', Released: data.Released || '',
-				Runtime: data.Runtime || '', Genre: data.Genre || '', Director: data.Director || '', Actors: data.Actors || '',
-				Plot: data.Plot || '', Poster: (data.Poster && data.Poster !== 'N/A' && String(data.Poster).indexOf('http') === 0) ? data.Poster : null,
+				Runtime: data.Runtime || '', Genre: data.Genre || '', Director: data.Director || '', Writer: data.Writer || '',
+				Actors: data.Actors || '', Plot: data.Plot || '', Language: data.Language || '', Country: data.Country || '',
+				Awards: data.Awards || '', BoxOffice: data.BoxOffice || '',
+				Poster: (data.Poster && data.Poster !== 'N/A' && String(data.Poster).indexOf('http') === 0) ? data.Poster : null,
 				imdbRating: data.imdbRating || '', imdbID: data.imdbID || '', Type: data.Type || ''
 			};
 			setCors();

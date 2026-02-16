@@ -29,15 +29,26 @@
 		.result-card .meta { padding: 0.5rem; font-size: 0.8rem; }
 		.result-card .title { font-weight: 600; margin-bottom: 0.2rem; line-height: 1.2; }
 		.result-card .year { color: #94a3b8; }
-		#detail { margin-top: 1.5rem; padding: 1rem; background: #1e293b; border-radius: 12px; display: none; }
+		#detail { margin-top: 1.5rem; padding: 1.25rem; background: #1e293b; border-radius: 12px; display: none; border: 1px solid #334155; }
 		#detail.visible { display: block; }
-		#detail .detail-header { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
-		#detail .detail-poster { width: 160px; border-radius: 8px; flex-shrink: 0; }
+		#detail .detail-header { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1rem; }
+		#detail .detail-poster { width: 200px; border-radius: 8px; flex-shrink: 0; }
 		#detail .detail-poster img { width: 100%; border-radius: 8px; }
-		#detail .detail-info { flex: 1; min-width: 200px; }
-		#detail h2 { margin: 0 0 0.5rem 0; font-size: 1.25rem; }
+		#detail .detail-info { flex: 1; min-width: 240px; }
+		#detail h2 { margin: 0 0 0.5rem 0; font-size: 1.35rem; }
 		#detail .detail-meta { color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.75rem; }
-		#detail .detail-plot { font-size: 0.9rem; line-height: 1.5; }
+		#detail .detail-plot { font-size: 0.95rem; line-height: 1.55; margin-bottom: 1rem; }
+		#detail .detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem 1.5rem; font-size: 0.9rem; }
+		#detail .detail-grid .row { display: flex; gap: 0.5rem; }
+		#detail .detail-grid .label { color: #94a3b8; flex-shrink: 0; min-width: 5rem; }
+		#detail .detail-grid .value { color: #e2e8f0; }
+		#detail .detail-actions { margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+		#detail .detail-actions a { color: #818cf8; text-decoration: none; font-size: 0.9rem; }
+		#detail .detail-actions a:hover { text-decoration: underline; }
+		.api-info { margin-top: 1.5rem; padding: 1rem; background: #1e293b; border-radius: 8px; font-size: 0.85rem; color: #94a3b8; border: 1px solid #334155; }
+		.api-info strong { color: #e2e8f0; }
+		.api-info a { color: #818cf8; }
+		.api-info code { background: #0f172a; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.8rem; }
 		.hint { color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem; }
 		#status { min-height: 1.5rem; font-size: 0.85rem; color: #94a3b8; }
 	</style>
@@ -70,8 +81,15 @@
 					<h2 id="detail-title"></h2>
 					<div class="detail-meta" id="detail-meta"></div>
 					<div class="detail-plot" id="detail-plot"></div>
+					<div class="detail-grid" id="detail-grid"></div>
+					<div class="detail-actions" id="detail-actions"></div>
 				</div>
 			</div>
+		</div>
+		<div class="api-info" id="api-info">
+			<strong>API base (for your bot or site):</strong> <code id="api-base"></code><br>
+			No key needed from the client — the key is set on the server (Vercel env <code>OMDB_API_KEY</code>).<br>
+			Test: <a href="#" id="api-test-poster">Poster by title</a> · <a href="#" id="api-test-search">Search</a> · <a href="#" id="api-test-id">By ID</a>
 		</div>
 	</div>
 
@@ -149,6 +167,12 @@
 				.catch(function () { setStatus('Network error.'); });
 		}
 
+		function esc(s) { return (s || '').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+		function row(label, value) {
+			if (!value || value === 'N/A') return '';
+			return '<div class="row"><span class="label">' + esc(label) + '</span><span class="value">' + esc(value) + '</span></div>';
+		}
+
 		function showDetail(imdbID) {
 			if (!imdbID) return;
 			setStatus('Loading…');
@@ -161,7 +185,7 @@
 					var d = document.getElementById('detail');
 					var poster = (data.Poster && data.Poster.indexOf('http') === 0)
 						? '<img src="' + data.Poster.replace(/"/g, '&quot;') + '" alt="">'
-						: '';
+						: '<div style="aspect-ratio:2/3;background:#334155;border-radius:8px;"></div>';
 					document.querySelector('#detail .detail-poster').innerHTML = poster;
 					document.getElementById('detail-title').textContent = (data.Title || '') + (data.Year ? ' (' + data.Year + ')' : '');
 					var meta = [];
@@ -171,7 +195,19 @@
 					if (data.imdbRating && data.imdbRating !== 'N/A') meta.push('IMDb: ' + data.imdbRating);
 					document.getElementById('detail-meta').textContent = meta.join(' · ');
 					document.getElementById('detail-plot').textContent = (data.Plot && data.Plot !== 'N/A') ? data.Plot : '';
+
+					var grid = document.getElementById('detail-grid');
+					grid.innerHTML = row('Released', data.Released) + row('Director', data.Director) + row('Writer', data.Writer) +
+						row('Actors', data.Actors) + row('Language', data.Language) + row('Country', data.Country) +
+						row('Awards', data.Awards) + row('Box office', data.BoxOffice) + row('Type', data.Type) + row('imdbID', data.imdbID);
+
+					var actions = document.getElementById('detail-actions');
+					var detailUrl = base + '?i=' + encodeURIComponent(data.imdbID || imdbID);
+					actions.innerHTML = '<a href="' + detailUrl + '" target="_blank" rel="noopener">Open in new tab</a>' +
+						(data.imdbID ? '<a href="https://www.imdb.com/title/' + esc(data.imdbID) + '/" target="_blank" rel="noopener">View on IMDb</a>' : '');
+
 					d.classList.add('visible');
+					d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 				})
 				.catch(function () { setStatus('Network error.'); });
 		}
@@ -179,7 +215,35 @@
 		document.getElementById('search-btn').addEventListener('click', search);
 		document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') search(); });
 
+		function initApiInfo() {
+			document.getElementById('api-base').textContent = base + '/api/omdb';
+			document.getElementById('api-test-poster').href = base + '/api/omdb?t=Inception';
+			document.getElementById('api-test-poster').target = '_blank';
+			document.getElementById('api-test-search').href = base + '/api/omdb?s=batman';
+			document.getElementById('api-test-search').target = '_blank';
+			document.getElementById('api-test-id').href = base + '/api/omdb?i=tt1375666';
+			document.getElementById('api-test-id').target = '_blank';
+		}
+
+		function checkDetailFromUrl() {
+			var q = new URLSearchParams(window.location.search);
+			var id = q.get('i');
+			if (id && /^tt\d+$/.test(id)) showDetail(id);
+		}
+
 		checkUnlock();
+		if (document.getElementById('app').classList.contains('unlocked')) {
+			initApiInfo();
+			checkDetailFromUrl();
+		}
+		document.getElementById('login-form').addEventListener('submit', function () {
+			setTimeout(function () {
+				if (document.getElementById('app').classList.contains('unlocked')) {
+					initApiInfo();
+					checkDetailFromUrl();
+				}
+			}, 0);
+		});
 	</script>
 </body>
 </html>
