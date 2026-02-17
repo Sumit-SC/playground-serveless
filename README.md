@@ -78,6 +78,23 @@ The repo includes a minimal test UI at the root URL (`https://your-app.vercel.ap
 
 ---
 
+## Daily API counter (1000/day, resets midnight UTC)
+
+The proxy tracks how many times it has called OMDb **today** (UTC). After 1000 requests in a day it returns **429** and does not call OMDb until the next day.
+
+- **Get count without using a hit:**  
+  `GET /api/omdb?usage=1`  
+  Returns only `{"dailyCount":N,"dailyLimit":1000}`. Does **not** increment the counter or call OMDb.
+- **Every other response** (search, by ID, poster by title, errors) includes `usage: { dailyCount, dailyLimit: 1000 }` in the JSON.
+- **How to check the deployment has this update:**
+  1. Open: `https://YOUR-APP.vercel.app/api/omdb?usage=1`  
+     You should see JSON like `{"dailyCount":0,"dailyLimit":1000}` (or a number &lt; 1000). If you see this, the daily counter is live.
+  2. Open: `https://YOUR-APP.vercel.app/api/omdb?t=Inception`  
+     The JSON should include `"usage":{"dailyCount":1,"dailyLimit":1000}` (or higher). If you see `usage.dailyCount` and `usage.dailyLimit`, the update is applied.
+  3. In the Playground (main site), open the **IMDb** flyout; the header should show **"X/1000 today"**. Opening the flyout calls `?usage=1` so the number appears without using an OMDb hit.
+
+---
+
 ## CineMaterial posters (scraper API)
 
 The app can fetch poster images from [CineMaterial](https://www.cinematerial.com/) using the **IMDb ID** you get from OMDb. CineMaterial uses the same ID with an `i` prefix (e.g. `tt1375666` → `i1375666`) in URLs like `https://www.cinematerial.com/movies/inception-i1375666`.

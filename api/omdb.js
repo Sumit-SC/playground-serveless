@@ -1,10 +1,85 @@
 /**
  * OMDb proxy — keeps the API key on the server. Use this repo alone on Vercel.
  * Env: OMDB_API_KEY (required). Optional: ALLOWED_ORIGINS, API_SECRET, RATE_LIMIT_PER_MINUTE.
+ * Tracks daily API hits (resets at midnight UTC); limit 1000/day. Use ?usage=1 to get count without calling OMDb.
  */
 
 const OMDB_BASE = 'https://www.omdbapi.com/';
 const MAX_TITLE_LENGTH = 200;
+const DAILY_LIMIT = 1000;
+
+// Daily counter: reset at midnight UTC. Persists in global across warm invocations.
+function getGlobalDaily() {
+	if (typeof global === 'undefined') return { date: '', count: 0 };
+	global.__omdbDaily = global.__omdbDaily || { date: '', count: 0 };
+	const today = new Date().toISOString().slice(0, 10);
+	if (global.__omdbDaily.date !== today) {
+		global.__omdbDaily = { date: today, count: 0 };
+	}
+	return global.__omdbDaily;
+}
+function incrementDaily() {
+	const d = getGlobalDaily();
+	d.count += 1;
+	return d.count;
+}
+function getDailyCount() {
+	return getGlobalDaily().count;
+}
+function usagePayload() {
+	return { dailyCount: getDailyCount(), dailyLimit: DAILY_LIMIT };
+}
+
+// Daily stats: by type (search, detail, poster) and by category (movies, kdrama, anime, bollywood). Last 31 days.
+var STATS_DAYS = 31;
+var CATEGORIES = ['movies', 'kdrama', 'anime', 'bollywood'];
+
+function getStats() {
+	if (typeof global === 'undefined') return { daily: {} };
+	global.__omdbStats = global.__omdbStats || { daily: {} };
+	return global.__omdbStats;
+}
+
+function recordRequest(type, category) {
+	var today = new Date().toISOString().slice(0, 10);
+	var stats = getStats();
+	if (!stats.daily[today]) {
+		stats.daily[today] = { count: 0, byType: { search: 0, detail: 0, poster: 0 }, byCategory: { movies: 0, kdrama: 0, anime: 0, bollywood: 0 } };
+	}
+	var d = stats.daily[today];
+	d.count += 1;
+	d.byType[type] = (d.byType[type] || 0) + 1;
+	if (category && CATEGORIES.indexOf(category) !== -1) {
+		d.byCategory[category] = (d.byCategory[category] || 0) + 1;
+	}
+	// Trim to last STATS_DAYS
+	var dates = Object.keys(stats.daily).sort();
+	while (dates.length > STATS_DAYS) {
+		delete stats.daily[dates[0]];
+		dates.shift();
+	}
+}
+
+function getStatsPayload() {
+	var stats = getStats();
+	var daily = stats.daily || {};
+	var dates = Object.keys(daily).sort().reverse().slice(0, STATS_DAYS);
+	var out = {};
+	dates.forEach(function (d) { out[d] = daily[d]; });
+	var now = new Date();
+	var weekAgo = new Date(now);
+	weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
+	var monthAgo = new Date(now);
+	monthAgo.setUTCDate(monthAgo.getUTCDate() - 30);
+	var weeklyTotal = 0;
+	var monthlyTotal = 0;
+	dates.forEach(function (d) {
+		var n = daily[d].count || 0;
+		if (d >= weekAgo.toISOString().slice(0, 10)) weeklyTotal += n;
+		if (d >= monthAgo.toISOString().slice(0, 10)) monthlyTotal += n;
+	});
+	return { daily: out, weeklyTotal: weeklyTotal, monthlyTotal: monthlyTotal, dailyLimit: DAILY_LIMIT };
+}
 
 // In-memory rate limit (per deployment instance). For strict limits across all instances use Vercel KV/Redis.
 var rateLimitMap = Object.create(null);
@@ -56,7 +131,7 @@ module.exports = async function handler(req, res) {
 
 	if (req.method !== 'GET') {
 		res.setHeader('Access-Control-Allow-Origin', origin || '*');
-		return res.status(405).json({ poster: null, error: 'Method not allowed' });
+		return res.status(405).json({ poster: null, error: 'Method not allowed', usage: usagePayload() });
 	}
 
 	const apiSecret = getApiSecret();
@@ -64,7 +139,7 @@ module.exports = async function handler(req, res) {
 		const provided = (req.headers['x-api-key'] || '').trim();
 		if (provided !== apiSecret) {
 			res.setHeader('Access-Control-Allow-Origin', origin || '*');
-			return res.status(401).json({ poster: null, error: 'Invalid or missing API key' });
+			return res.status(401).json({ poster: null, error: 'Invalid or missing API key', usage: usagePayload() });
 		}
 	}
 
@@ -73,22 +148,50 @@ module.exports = async function handler(req, res) {
 	if (rateErr) {
 		res.setHeader('Retry-After', String(rateErr.retryAfter));
 		res.setHeader('Access-Control-Allow-Origin', origin || '*');
-		return res.status(429).json({ poster: null, error: 'Too many requests' });
+		return res.status(429).json({ poster: null, error: 'Too many requests', usage: usagePayload() });
+	}
+
+	// Usage-only: return daily count without incrementing and without calling OMDb.
+	if (req.query && req.query.usage === '1') {
+		res.setHeader('Access-Control-Allow-Origin', allowedOrigin(origin) ? (origin || '*') : '*');
+		res.setHeader('Cache-Control', 'no-store');
+		return res.status(200).json(usagePayload());
+	}
+	// Stats: daily table + weekly/monthly totals (read-only).
+	if (req.query && req.query.stats === '1') {
+		res.setHeader('Access-Control-Allow-Origin', allowedOrigin(origin) ? (origin || '*') : '*');
+		res.setHeader('Cache-Control', 'no-store');
+		return res.status(200).json(getStatsPayload());
 	}
 
 	const key = getKey();
 	if (!key) {
 		res.setHeader('Access-Control-Allow-Origin', origin || '*');
-		return res.status(503).json({ poster: null, error: 'OMDb proxy not configured' });
+		return res.status(503).json({ poster: null, error: 'OMDb proxy not configured', usage: usagePayload() });
 	}
+
+	// Enforce daily OMDb limit (resets midnight UTC). Do not increment if at limit.
+	if (getDailyCount() >= DAILY_LIMIT) {
+		res.setHeader('Access-Control-Allow-Origin', origin || '*');
+		return res.status(429).json({
+			error: 'Daily API limit reached (1000). Resets at midnight UTC.',
+			usage: usagePayload()
+		});
+	}
+	incrementDaily();
 
 	const setCors = function () {
 		res.setHeader('Access-Control-Allow-Origin', allowedOrigin(origin) ? (origin || '*') : '*');
 	};
+	function getCategory() {
+		var c = (req.query && req.query.category) ? String(req.query.category).toLowerCase().trim() : '';
+		return CATEGORIES.indexOf(c) !== -1 ? c : '';
+	}
 
 	// Search: s=query
 	const searchQuery = typeof req.query.s === 'string' ? req.query.s.trim() : '';
 	if (searchQuery && searchQuery.length <= MAX_TITLE_LENGTH) {
+		recordRequest('search', getCategory());
 		try {
 			const url = OMDB_BASE + '?s=' + encodeURIComponent(searchQuery) + '&apikey=' + encodeURIComponent(key);
 			const r = await fetch(url);
@@ -105,23 +208,24 @@ module.exports = async function handler(req, res) {
 			});
 			setCors();
 			res.setHeader('Cache-Control', 'public, max-age=300');
-			return res.status(200).json({ results: results });
+			return res.status(200).json({ results: results, usage: usagePayload() });
 		} catch (e) {
 			res.setHeader('Access-Control-Allow-Origin', origin || '*');
-			return res.status(502).json({ results: [], error: 'Upstream error' });
+			return res.status(502).json({ results: [], error: 'Upstream error', usage: usagePayload() });
 		}
 	}
 
 	// By ID: i=imdbID
 	const idQuery = typeof req.query.i === 'string' ? req.query.i.trim() : '';
 	if (idQuery && /^tt\d+$/.test(idQuery)) {
+		recordRequest('detail', getCategory());
 		try {
 			const url = OMDB_BASE + '?i=' + encodeURIComponent(idQuery) + '&apikey=' + encodeURIComponent(key);
 			const r = await fetch(url);
 			const data = await r.json().catch(function () { return null; });
 			if (!data || data.Response === 'False') {
 				setCors();
-				return res.status(200).json({ error: 'Not found' });
+				return res.status(200).json({ error: 'Not found', usage: usagePayload() });
 			}
 			const out = {
 				Title: data.Title || '', Year: data.Year || '', Rated: data.Rated || '', Released: data.Released || '',
@@ -133,10 +237,10 @@ module.exports = async function handler(req, res) {
 			};
 			setCors();
 			res.setHeader('Cache-Control', 'public, max-age=86400');
-			return res.status(200).json(out);
+			return res.status(200).json(Object.assign({}, out, { usage: usagePayload() }));
 		} catch (e) {
 			res.setHeader('Access-Control-Allow-Origin', origin || '*');
-			return res.status(502).json({ error: 'Upstream error' });
+			return res.status(502).json({ error: 'Upstream error', usage: usagePayload() });
 		}
 	}
 
@@ -144,9 +248,10 @@ module.exports = async function handler(req, res) {
 	const t = typeof req.query.t === 'string' ? req.query.t.trim() : '';
 	if (!t || t.length > MAX_TITLE_LENGTH) {
 		res.setHeader('Access-Control-Allow-Origin', origin || '*');
-		return res.status(400).json({ poster: null, error: 'Missing or invalid title' });
+		return res.status(400).json({ poster: null, error: 'Missing or invalid title', usage: usagePayload() });
 	}
 	const type = (req.query.type === 'movie' || req.query.type === 'series') ? req.query.type : '';
+	recordRequest('poster', getCategory());
 	const url = OMDB_BASE + '?t=' + encodeURIComponent(t) + '&apikey=' + encodeURIComponent(key) + (type ? '&type=' + type : '');
 	try {
 		const r = await fetch(url);
@@ -154,9 +259,9 @@ module.exports = async function handler(req, res) {
 		const poster = data && data.Poster && data.Poster !== 'N/A' && String(data.Poster).indexOf('http') === 0 ? data.Poster : null;
 		setCors();
 		res.setHeader('Cache-Control', 'public, max-age=86400');
-		return res.status(200).json({ poster: poster });
+		return res.status(200).json({ poster: poster, usage: usagePayload() });
 	} catch (e) {
 		res.setHeader('Access-Control-Allow-Origin', origin || '*');
-		return res.status(502).json({ poster: null, error: 'Upstream error' });
+		return res.status(502).json({ poster: null, error: 'Upstream error', usage: usagePayload() });
 	}
 };
