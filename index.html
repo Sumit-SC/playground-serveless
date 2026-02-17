@@ -337,27 +337,7 @@
 
 		document.getElementById('cinematerial-fetch-btn').addEventListener('click', fetchCineMaterial);
 		document.getElementById('search-btn').addEventListener('click', search);
-
-		// Search as you type (debounced), like the playground IMDb flyout
-		var searchDebounceTimer = null;
-		var lastSearchQuery = '';
-		document.getElementById('search-input').addEventListener('input', function () {
-			var q = this.value.trim();
-			lastSearchQuery = q;
-			clearTimeout(searchDebounceTimer);
-			if (!q) {
-				setStatus('Type to search movies or series.');
-				document.getElementById('results').innerHTML = '';
-				document.getElementById('detail').classList.remove('visible');
-				return;
-			}
-			searchDebounceTimer = setTimeout(function () {
-				var current = document.getElementById('search-input').value.trim();
-				if (current !== lastSearchQuery) return;
-				if (!current) return;
-				search();
-			}, 320);
-		});
+		// Search only on button click or Enter — no live search, to save API hits.
 		document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') search(); });
 
 		function initApiInfo() {
