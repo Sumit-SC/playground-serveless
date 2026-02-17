@@ -58,6 +58,21 @@
 		.api-info code { background: #0f172a; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.8rem; }
 		.hint { color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem; }
 		#status { min-height: 1.5rem; font-size: 0.85rem; color: #94a3b8; }
+		.usage-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+		#usage-display { font-size: 0.85rem; color: #94a3b8; }
+		#usage-display strong { color: #e2e8f0; }
+		#stats-panel { display: none; margin-top: 1rem; padding: 1rem; background: #1e293b; border-radius: 12px; border: 1px solid #334155; }
+		#stats-panel.visible { display: block; }
+		.stats-summary { margin-bottom: 1rem; font-size: 0.85rem; }
+		.stats-summary p { margin: 0.25rem 0; }
+		.stats-filters { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+		.stats-filters label { font-size: 0.85rem; color: #94a3b8; }
+		.stats-filters select { padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; font-size: 0.85rem; }
+		.stats-table-wrap { overflow-x: auto; }
+		.stats-table { width: 100%; font-size: 0.75rem; border-collapse: collapse; }
+		.stats-table th, .stats-table td { padding: 0.35rem 0.5rem; text-align: left; border-bottom: 1px solid #334155; }
+		.stats-table th { color: #94a3b8; font-weight: 600; }
+		.stats-table td { color: #e2e8f0; }
 	</style>
 </head>
 <body>
@@ -79,11 +94,19 @@
 			<button type="button" id="search-btn">Search</button>
 			<button type="button" id="logout-btn" class="secondary">Lock</button>
 		</div>
+		<div class="usage-row">
+			<span id="usage-display" class="hint">—/1000 today</span>
+			<button type="button" id="stats-btn" class="secondary">Stats</button>
+		</div>
 		<p class="hint" style="margin-top:0.25rem;">If the API requires a key, set it below so the test UI can call it.</p>
 		<div class="search-row" style="max-width:320px;">
 			<input type="password" id="api-key-input" placeholder="API key (optional)" autocomplete="off">
 		</div>
 		<div id="status"></div>
+		<div id="stats-panel">
+			<div id="stats-content"></div>
+			<button type="button" id="stats-back-btn" class="secondary" style="margin-top:0.75rem;">Back</button>
+		</div>
 		<div id="results" class="results-grid"></div>
 		<div id="detail">
 			<div class="detail-header">
@@ -119,6 +142,23 @@
 		var API_KEY_STORAGE = 'omdb_ui_api_key';
 		var base = window.location.origin;
 		var currentDetail = { imdbID: '', title: '', type: 'movie' };
+		var SOURCE_PARAM = '&source=vercel_app';
+
+		function updateUsageDisplay(usage) {
+			var el = document.getElementById('usage-display');
+			if (!el || !usage) return;
+			var count = usage.dailyCount != null ? usage.dailyCount : '—';
+			var limit = usage.dailyLimit != null ? usage.dailyLimit : 1000;
+			el.innerHTML = '<strong>' + count + '</strong>/' + limit + ' today';
+		}
+		function fetchUsageOnly() {
+			fetch(base + '/api/omdb?usage=1', { headers: getApiKeyHeaders() })
+				.then(function (r) { return r.ok ? r.json() : null; })
+				.then(function (data) {
+					if (data && data.dailyCount != null) updateUsageDisplay(data);
+				})
+				.catch(function () {});
+		}
 
 		function slugify(s) {
 			if (!s) return 'title';
@@ -191,9 +231,10 @@
 			setStatus('Searching…');
 			document.getElementById('results').innerHTML = '';
 			document.getElementById('detail').classList.remove('visible');
-			fetch(base + '/api/omdb?s=' + encodeURIComponent(q), { headers: getApiKeyHeaders() })
+			fetch(base + '/api/omdb?s=' + encodeURIComponent(q) + SOURCE_PARAM, { headers: getApiKeyHeaders() })
 				.then(function (r) { return r.json(); })
 				.then(function (data) {
+					if (data && data.usage) updateUsageDisplay(data.usage);
 					var list = (data && data.results) ? data.results : [];
 					if (data && data.error) { setStatus(data.error); return; }
 					setStatus(list.length ? 'Found ' + list.length + ' results.' : 'No results.');
@@ -222,9 +263,10 @@
 			if (!imdbID) return;
 			setStatus('Loading…');
 			document.getElementById('detail').classList.remove('visible');
-			fetch(base + '/api/omdb?i=' + encodeURIComponent(imdbID), { headers: getApiKeyHeaders() })
+			fetch(base + '/api/omdb?i=' + encodeURIComponent(imdbID) + SOURCE_PARAM, { headers: getApiKeyHeaders() })
 				.then(function (r) { return r.json(); })
 				.then(function (data) {
+					if (data && data.usage) updateUsageDisplay(data.usage);
 					if (data && data.error) { setStatus(data.error); return; }
 					setStatus('');
 					var d = document.getElementById('detail');
@@ -305,7 +347,112 @@
 			document.getElementById('api-test-search').target = '_blank';
 			document.getElementById('api-test-id').href = base + '/api/omdb?i=tt1375666';
 			document.getElementById('api-test-id').target = '_blank';
+			fetchUsageOnly();
 		}
+
+		function showStatsPanel(show) {
+			var panel = document.getElementById('stats-panel');
+			var results = document.getElementById('results');
+			var detail = document.getElementById('detail');
+			if (show) {
+				panel.classList.add('visible');
+				if (results) results.style.display = 'none';
+				if (detail) detail.style.display = 'none';
+			} else {
+				panel.classList.remove('visible');
+				if (results) results.style.display = '';
+				if (detail) detail.style.display = '';
+			}
+		}
+
+		function renderStatsDashboard(data) {
+			var daily = data.daily || {};
+			var dates = Object.keys(daily).sort().reverse();
+			var catFilter = (document.getElementById('stats-cat-filter') && document.getElementById('stats-cat-filter').value) || 'all';
+			var srcFilter = (document.getElementById('stats-src-filter') && document.getElementById('stats-src-filter').value) || 'all';
+			var cats = ['movies', 'kdrama', 'anime', 'bollywood'];
+			var catLabel = { movies: 'Movies', kdrama: 'K-drama', anime: 'Anime', bollywood: 'Bollywood' };
+			var sources = ['website', 'vercel_app', 'manual', 'form_bot', 'other'];
+			var srcLabel = { website: 'Website', vercel_app: 'Vercel app', manual: 'Manual', form_bot: 'Form bot', other: 'Other' };
+
+			var today = new Date().toISOString().slice(0, 10);
+			var todayRow = daily[today];
+			var todayCount = todayRow ? todayRow.count : 0;
+			var summary = '<div class="stats-summary"><p><strong>Summary</strong></p>';
+			summary += '<p>Today: <strong>' + todayCount + '</strong> / ' + (data.dailyLimit || 1000) + ' &middot; Weekly: <strong>' + (data.weeklyTotal || 0) + '</strong> &middot; Monthly: <strong>' + (data.monthlyTotal || 0) + '</strong></p>';
+			if (catFilter !== 'all') {
+				var catTotal = 0;
+				dates.forEach(function (d) {
+					var row = daily[d];
+					if (row && row.byCategory && row.byCategory[catFilter] != null) catTotal += row.byCategory[catFilter];
+				});
+				summary += '<p>' + (catLabel[catFilter] || catFilter) + ' total: <strong>' + catTotal + '</strong></p>';
+			}
+			if (srcFilter !== 'all') {
+				var srcTotal = 0;
+				dates.forEach(function (d) {
+					var row = daily[d];
+					if (row && row.bySource && row.bySource[srcFilter] != null) srcTotal += row.bySource[srcFilter];
+				});
+				summary += '<p>' + (srcLabel[srcFilter] || srcFilter) + ' total: <strong>' + srcTotal + '</strong></p>';
+			}
+			summary += '</div>';
+
+			var filterHtml = '<div class="stats-filters">';
+			filterHtml += '<label>Category:</label><select id="stats-cat-filter"><option value="all"' + (catFilter === 'all' ? ' selected' : '') + '>All</option>';
+			cats.forEach(function (c) {
+				filterHtml += '<option value="' + c + '"' + (catFilter === c ? ' selected' : '') + '>' + (catLabel[c] || c) + '</option>';
+			});
+			filterHtml += '</select>';
+			filterHtml += '<label>Source:</label><select id="stats-src-filter"><option value="all"' + (srcFilter === 'all' ? ' selected' : '') + '>All</option>';
+			sources.forEach(function (s) {
+				filterHtml += '<option value="' + s + '"' + (srcFilter === s ? ' selected' : '') + '>' + (srcLabel[s] || s) + '</option>';
+			});
+			filterHtml += '</select></div>';
+
+			var table = '<div class="stats-table-wrap"><table class="stats-table"><thead><tr>';
+			table += '<th>Date</th><th>Total</th><th>Search</th><th>Detail</th><th>Poster</th>';
+			sources.forEach(function (s) { table += '<th>' + (srcLabel[s] || s) + '</th>'; });
+			cats.forEach(function (c) { table += '<th>' + (catLabel[c] || c) + '</th>'; });
+			table += '</tr></thead><tbody>';
+			dates.forEach(function (d) {
+				var row = daily[d];
+				if (!row) return;
+				var byType = row.byType || {};
+				var byCat = row.byCategory || {};
+				var bySrc = row.bySource || {};
+				table += '<tr><td>' + esc(d) + '</td><td>' + (row.count || 0) + '</td>';
+				table += '<td>' + (byType.search || 0) + '</td><td>' + (byType.detail || 0) + '</td><td>' + (byType.poster || 0) + '</td>';
+				sources.forEach(function (s) { table += '<td>' + (bySrc[s] || 0) + '</td>'; });
+				cats.forEach(function (c) { table += '<td>' + (byCat[c] || 0) + '</td>'; });
+				table += '</tr>';
+			});
+			table += '</tbody></table></div>';
+
+			document.getElementById('stats-content').innerHTML = summary + filterHtml + table;
+			document.getElementById('stats-cat-filter').onchange = function () { renderStatsDashboard(data); };
+			document.getElementById('stats-src-filter').onchange = function () { renderStatsDashboard(data); };
+		}
+
+		document.getElementById('stats-btn').addEventListener('click', function () {
+			showStatsPanel(true);
+			document.getElementById('stats-content').innerHTML = '<p class="hint">Loading stats…</p>';
+			fetch(base + '/api/omdb?stats=1', { headers: getApiKeyHeaders() })
+				.then(function (r) { return r.ok ? r.json() : null; })
+				.then(function (data) {
+					if (!data || !data.daily || Object.keys(data.daily).length === 0) {
+						document.getElementById('stats-content').innerHTML = '<p class="hint">No stats yet. Use search or detail to build data.</p>';
+						return;
+					}
+					renderStatsDashboard(data);
+				})
+				.catch(function () {
+					document.getElementById('stats-content').innerHTML = '<p class="hint">Could not load stats.</p>';
+				});
+		});
+		document.getElementById('stats-back-btn').addEventListener('click', function () {
+			showStatsPanel(false);
+		});
 
 		function checkDetailFromUrl() {
 			var q = new URLSearchParams(window.location.search);
