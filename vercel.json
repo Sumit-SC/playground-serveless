@@ -8,6 +8,8 @@
     { "src": "api/rss.js", "use": "@vercel/node" },
     { "src": "api/workingnomads.js", "use": "@vercel/node" },
     { "src": "api/headless-scrape-weworkremotely.js", "use": "@vercel/node" },
+    { "src": "api/headless-scrape-multi.js", "use": "@vercel/node" },
+    { "src": "api/jobs-scraper-background.js", "use": "@vercel/node" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
   "routes": [
@@ -18,6 +20,8 @@
     { "src": "/api/rss", "dest": "/api/rss.js" },
     { "src": "/api/workingnomads", "dest": "/api/workingnomads.js" },
     { "src": "/api/headless-scrape-weworkremotely", "dest": "/api/headless-scrape-weworkremotely.js" },
+    { "src": "/api/headless-scrape-multi", "dest": "/api/headless-scrape-multi.js" },
+    { "src": "/api/jobs-scraper-background", "dest": "/api/jobs-scraper-background.js" },
     { "src": "/", "dest": "/index.html" }
   ]
 }

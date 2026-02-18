@@ -115,7 +115,15 @@ The app can fetch poster images from [CineMaterial](https://www.cinematerial.com
 
 **Response:** Each response includes `sources` and `sourceCounts` (e.g. `{ "remoteok": 45, "remotive": 32 }`) so you can see which boards contributed.
 
-**Headless browser (optional):** To add jobs scraped from WeWorkRemotely via headless Chromium, set **`ENABLE_HEADLESS=1`** in Vercel → Settings → Environment Variables, then redeploy. The jobs-snapshot API will call the headless scraper and merge those jobs (source: `weworkremotely_headless`). Headless is slow (~15–25s) and uses more memory; enable only if you want maximum coverage.
+**Headless browser (optional):** To add jobs scraped from multiple sites (WeWorkRemotely, **Hirist**, **Naukri**, etc.) via headless Chromium, set **`ENABLE_HEADLESS=1`** in Vercel → Settings → Environment Variables, then redeploy. The jobs-snapshot API will call the headless scrapers and merge those jobs. Headless is slow (~20–35s) and uses more memory; enable only if you want maximum coverage.
+
+**Vercel KV storage (optional):** To cache headless-scraped jobs and avoid slow scraping on every request:
+1. Create a Vercel KV database (Vercel Dashboard → Storage → Create KV Database).
+2. Add env vars: **`KV_REST_API_URL`** and **`KV_REST_API_TOKEN`** (auto-set by Vercel).
+3. Call `/api/jobs-scraper-background` periodically (cron, manual, or Vercel Cron) to refresh cached jobs.
+4. The jobs-snapshot API will automatically use cached jobs from KV (faster) + live sources.
+
+**New sources added:** Indeed RSS, Wellfound (multiple feeds), Hirist (headless), Naukri (headless). Total sources: **10+** (RemoteOK, Remotive, WeWorkRemotely, Jobscollider, Wellfound, Indeed, WorkingNomads, Hirist, Naukri, plus cached headless).
 
 ---
 
@@ -152,6 +160,8 @@ The app can fetch poster images from [CineMaterial](https://www.cinematerial.com
 | `/api/rss` | GET | RSS/Atom proxy (CORS + allowlist) | None |
 | `/api/workingnomads` | GET | Working Nomads jobs proxy | None |
 | `/api/headless-scrape-weworkremotely` | GET | WeWorkRemotely scraper (headless browser). Also used by jobs-snapshot when `ENABLE_HEADLESS=1`. | `ENABLE_HEADLESS=1` to enable |
+| `/api/headless-scrape-multi` | GET | Multi-site headless scraper (Hirist, Naukri). Use `?site=all` to scrape all sites. | `ENABLE_HEADLESS=1` to enable |
+| `/api/jobs-scraper-background` | GET | Background scraper that saves headless-scraped jobs to Vercel KV. Call periodically (cron/manual). | `ENABLE_HEADLESS=1`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` |
 
 **Example calls:**
 

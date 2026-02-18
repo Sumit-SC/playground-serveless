@@ -149,7 +149,8 @@ const RSS_ALLOWED_HOSTS = new Set([
 	'weworkremotely.com', 'www.weworkremotely.com',
 	'remotive.com', 'www.remotive.com',
 	'jobscollider.com', 'www.jobscollider.com',
-	'wellfound.com', 'www.wellfound.com'
+	'wellfound.com', 'www.wellfound.com',
+	'indeed.com', 'www.indeed.com', 'rss.indeed.com'
 ]);
 
 function stripTag(xml, tag) {
@@ -280,6 +281,18 @@ module.exports = async (req, res) => {
 	const maxAgeMs = days * 24 * 60 * 60 * 1000;
 
 	let jobs = [];
+	
+	// Try to load cached headless-scraped jobs from KV (if available)
+	let cachedHeadlessJobs = [];
+	if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+		try {
+			const { kv } = require('@vercel/kv');
+			const cached = await kv.get('jobs:scraped:all');
+			if (cached && cached.jobs && Array.isArray(cached.jobs)) {
+				cachedHeadlessJobs = cached.jobs;
+			}
+		} catch (e) { /* KV optional */ }
+	}
 
 	// 1) RemoteOK JSON API (fast) — API returns array; first element can be metadata
 	const remoteOk = await fetchJson('https://remoteok.com/api');
@@ -345,7 +358,11 @@ module.exports = async (req, res) => {
 		{ source: 'jobscollider', url: 'https://jobscollider.com/remote-data-jobs.rss' },
 		{ source: 'remoteok', url: 'https://remoteok.com/remote-jobs.rss' },
 		{ source: 'remoteok', url: 'https://remoteok.io/remote-jobs.rss' },
-		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-science&remote=true' }
+		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-science&remote=true' },
+		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-analyst&remote=true' },
+		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=business-intelligence&remote=true' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=data+analyst&l=remote&radius=0' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=data+scientist&l=remote&radius=0' }
 	];
 
 	const rssResults = await Promise.allSettled(rssFeeds.map(async (f) => {
@@ -435,6 +452,58 @@ module.exports = async (req, res) => {
 				});
 			}
 		} catch (e) { /* headless optional */ }
+		
+		// 6) Multi-site headless scraper (Hirist, Naukri, etc.) — slow but gets India-focused jobs
+		try {
+			const multiPromise = fetchJson(baseUrl + '/api/headless-scrape-multi?site=all', { timeout: 35_000 });
+			const multi = await Promise.race([multiPromise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 35_000))]);
+			if (multi && multi.ok && Array.isArray(multi.jobs)) {
+				multi.jobs.forEach((it) => {
+					if (!it || !it.title || !it.url) return;
+					const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || ''));
+					if (!containsAny(full, keywords)) return;
+					const role = roleTierRank(it.title || '');
+					const locScore = locationRank(it.location || 'India');
+					jobs.push(normalizeJob({
+						id: (it.source || 'headless') + '_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
+						title: it.title,
+						company: it.company || 'Unknown',
+						location: it.location || 'India',
+						url: it.url,
+						description: it.description || '',
+						source: it.source || 'headless_multi',
+						date: it.date || nowIso(),
+						tags: ['headless'],
+						_rank: role.score + locScore,
+						_roleTier: role.tier
+					}));
+				});
+			}
+		} catch (e) { /* multi-scraper optional */ }
+	}
+	
+	// 7) Add cached headless jobs from KV (if available) — faster than live scraping
+	if (cachedHeadlessJobs.length > 0) {
+		cachedHeadlessJobs.forEach((it) => {
+			if (!it || !it.title || !it.url) return;
+			const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || ''));
+			if (!containsAny(full, keywords)) return;
+			const role = roleTierRank(it.title || '');
+			const locScore = locationRank(it.location || 'India');
+			jobs.push(normalizeJob({
+				id: (it.source || 'cached') + '_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
+				title: it.title,
+				company: it.company || 'Unknown',
+				location: it.location || 'India',
+				url: it.url,
+				description: it.description || '',
+				source: it.source || 'cached_headless',
+				date: it.date || nowIso(),
+				tags: ['cached'],
+				_rank: role.score + locScore,
+				_roleTier: role.tier
+			}));
+		});
 	}
 
 	// Freshness filter (last N days)
