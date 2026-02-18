@@ -4,12 +4,20 @@
     { "src": "api/omdb.js", "use": "@vercel/node" },
     { "src": "api/auth.js", "use": "@vercel/node" },
     { "src": "api/cinematerial.js", "use": "@vercel/node" },
+    { "src": "api/jobs-snapshot.js", "use": "@vercel/node" },
+    { "src": "api/rss.js", "use": "@vercel/node" },
+    { "src": "api/workingnomads.js", "use": "@vercel/node" },
+    { "src": "api/headless-scrape-weworkremotely.js", "use": "@vercel/node" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/omdb(.*)", "dest": "/api/omdb.js" },
     { "src": "/api/auth", "dest": "/api/auth.js" },
     { "src": "/api/cinematerial(.*)", "dest": "/api/cinematerial.js" },
+    { "src": "/api/jobs-snapshot", "dest": "/api/jobs-snapshot.js" },
+    { "src": "/api/rss", "dest": "/api/rss.js" },
+    { "src": "/api/workingnomads", "dest": "/api/workingnomads.js" },
+    { "src": "/api/headless-scrape-weworkremotely", "dest": "/api/headless-scrape-weworkremotely.js" },
     { "src": "/", "dest": "/index.html" }
   ]
 }

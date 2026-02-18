@@ -124,3 +124,41 @@ The app can fetch poster images from [CineMaterial](https://www.cinematerial.com
 **Recommendation:** Set **`ALLOWED_ORIGINS`** to your main site so random websites can’t use your API from the browser. If only your bot or server should call the API, set **`API_SECRET`** and send it as `X-API-Key` from your code. Add **`RATE_LIMIT_PER_MINUTE`** (e.g. 60) to cap burst traffic per IP.
 
 **If you set `API_SECRET`:** Your bot or main site must send `X-API-Key: <API_SECRET>` on every request. The test UI at `/` has an optional “API key” field; enter the same value as `API_SECRET` so the test UI can still call the API after you unlock it.
+
+---
+
+## API reference (all endpoints)
+
+| Endpoint | Method | Purpose | Env / notes |
+|----------|--------|---------|-------------|
+| `/api/omdb` | GET | OMDb proxy (search, by ID, poster by title) | `OMDB_API_KEY` required; optional: `ALLOWED_ORIGINS`, `API_SECRET`, `RATE_LIMIT_PER_MINUTE` |
+| `/api/omdb?usage=1` | GET | Daily usage count (no OMDb hit) | Same |
+| `/api/omdb?stats=1` | GET | Daily stats (by type, category, source) | Same |
+| `/api/auth` | GET | UI secret check for test UI | `UI_SECRET` |
+| `/api/cinematerial` | GET | CineMaterial poster scraper by IMDb ID | None |
+| `/api/jobs-snapshot` | GET | Aggregated jobs (RemoteOK, Remotive, RSS, WorkingNomads) | None; uses `/api/rss` and `/api/workingnomads` internally |
+| `/api/rss` | GET | RSS/Atom proxy (CORS + allowlist) | None |
+| `/api/workingnomads` | GET | Working Nomads jobs proxy | None |
+| `/api/headless-scrape-weworkremotely` | GET | Optional WeWorkRemotely scraper | `ENABLE_HEADLESS=1` to enable |
+
+**Example calls:**
+
+```bash
+# OMDb
+curl "https://YOUR-APP.vercel.app/api/omdb?t=Inception"
+curl "https://YOUR-APP.vercel.app/api/omdb?s=batman"
+curl "https://YOUR-APP.vercel.app/api/omdb?i=tt1375666"
+curl "https://YOUR-APP.vercel.app/api/omdb?usage=1"
+
+# Jobs (analyst-focused, last 7 days, up to 120 results)
+curl "https://YOUR-APP.vercel.app/api/jobs-snapshot?q=data%20analyst&days=7&limit=120"
+
+# RSS proxy (url and count required; host allowlisted)
+curl "https://YOUR-APP.vercel.app/api/rss?url=https%3A%2F%2Fremotive.com%2Ffeed&count=20"
+
+# Working Nomads
+curl "https://YOUR-APP.vercel.app/api/workingnomads?q=data%20science&count=50"
+
+# CineMaterial (poster images by IMDb ID)
+curl "https://YOUR-APP.vercel.app/api/cinematerial?i=tt1375666&title=Inception&type=movie"
+```

@@ -178,7 +178,7 @@ module.exports = async (req, res) => {
 
 	const proto = (req.headers['x-forwarded-proto'] || 'https');
 	const host = req.headers['x-forwarded-host'] || req.headers.host;
-	const baseUrl = proto + '://' + host;
+	const baseUrl = (host && (proto + '://' + host)) || '';
 
 	// Broader keywords to keep enough volume; ranking will prioritize the roles.
 	const keywords = [
@@ -256,10 +256,12 @@ module.exports = async (req, res) => {
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-science&remote=true' }
 	];
 
-	const rssResults = await Promise.allSettled(rssFeeds.map(async (f) => {
-		const items = await fetchRss(baseUrl, f.url, 50);
-		return { source: f.source, items };
-	}));
+	const rssResults = baseUrl
+		? await Promise.allSettled(rssFeeds.map(async (f) => {
+			const items = await fetchRss(baseUrl, f.url, 50);
+			return { source: f.source, items };
+		}))
+		: [];
 
 	rssResults.forEach((r) => {
 		if (!r || r.status !== 'fulfilled' || !r.value) return;
@@ -289,7 +291,9 @@ module.exports = async (req, res) => {
 	});
 
 	// 4) WorkingNomads (public exposed API via our own proxy)
-	const wn = await fetchJson(baseUrl + '/api/workingnomads?q=' + encodeURIComponent(q) + '&count=80');
+	const wn = baseUrl
+		? await fetchJson(baseUrl + '/api/workingnomads?q=' + encodeURIComponent(q) + '&count=80')
+		: null;
 	if (wn && wn.ok && Array.isArray(wn.jobs)) {
 		wn.jobs.forEach((it) => {
 			if (!it || !it.title || !it.url) return;
