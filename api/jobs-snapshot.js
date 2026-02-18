@@ -259,6 +259,26 @@ function roleTierRank(title, description) {
 	const desc = String(description || '').toLowerCase();
 	const fullText = t + ' ' + desc;
 	
+	// Exclude irrelevant categories first
+	const excludePatterns = [
+		/^online[- ]marketing/i,
+		/^marketing$/i,
+		/^social media/i,
+		/^content marketing/i,
+		/^seo/i,
+		/^ppc/i,
+		/^paid advertising/i,
+		/^praktikum/i, // German internship
+		/^intern$/i,
+		/^trainee$/i
+	];
+	
+	// If title starts with excluded patterns and doesn't mention data/analyst, exclude
+	const titleMatch = t.match(/^(online[- ]marketing|marketing|social media|content marketing|seo|ppc|paid advertising|performance marketing|praktikum|intern|trainee)/);
+	if (titleMatch && !fullText.match(/(data|analyst|analytics|bi|business intelligence|sql|python|tableau|power bi|looker)/)) {
+		return { tier: 'excluded', score: -100, hit: 'irrelevant_category' };
+	}
+	
 	// Check for exclusion terms (Data Engineering) - penalize heavily
 	const excludeHit = includesAnyPhrase(fullText, ROLE_TIER_3_EXCLUDE);
 	if (excludeHit) {
@@ -272,7 +292,15 @@ function roleTierRank(title, description) {
 	}
 	
 	const hit1 = includesAnyPhrase(t, ROLE_TIER_1);
-	if (hit1) return { tier: 'tier1', score: 200, hit: hit1 };
+	if (hit1) {
+		// Special handling for "marketing analyst" - require data/analytics context
+		if (hit1.includes('marketing analyst') || hit1.includes('marketing')) {
+			if (!fullText.match(/(data|analytics|bi|business intelligence|sql|python|tableau|power bi|looker|snowflake|redshift)/)) {
+				return { tier: 'excluded', score: -100, hit: 'marketing_without_data_context' };
+			}
+		}
+		return { tier: 'tier1', score: 200, hit: hit1 };
+	}
 	const hit2 = includesAnyPhrase(t, ROLE_TIER_2);
 	if (hit2) return { tier: 'tier2', score: 120, hit: hit2 };
 	// Generic analyst-ish hints
