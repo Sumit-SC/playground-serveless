@@ -11,6 +11,9 @@
     { "src": "api/headless-scrape-multi.js", "use": "@vercel/node" },
     { "src": "api/headless-scrape-indeed.js", "use": "@vercel/node" },
     { "src": "api/headless-scrape-linkedin.js", "use": "@vercel/node" },
+    { "src": "api/headless-scrape-all-portals.js", "use": "@vercel/node" },
+    { "src": "api/jobs-cached.js", "use": "@vercel/node" },
+    { "src": "api/jobs-refresh.js", "use": "@vercel/node" },
     { "src": "api/jobs-scraper-background.js", "use": "@vercel/node" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
@@ -25,6 +28,9 @@
     { "src": "/api/headless-scrape-multi", "dest": "/api/headless-scrape-multi.js" },
     { "src": "/api/headless-scrape-indeed", "dest": "/api/headless-scrape-indeed.js" },
     { "src": "/api/headless-scrape-linkedin", "dest": "/api/headless-scrape-linkedin.js" },
+    { "src": "/api/headless-scrape-all-portals", "dest": "/api/headless-scrape-all-portals.js" },
+    { "src": "/api/jobs-cached", "dest": "/api/jobs-cached.js" },
+    { "src": "/api/jobs-refresh", "dest": "/api/jobs-refresh.js" },
     { "src": "/api/jobs-scraper-background", "dest": "/api/jobs-scraper-background.js" },
     { "src": "/", "dest": "/index.html" }
   ]
