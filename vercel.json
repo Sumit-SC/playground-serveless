@@ -11,7 +11,8 @@
     { "src": "api/jobs-cached.js", "use": "@vercel/node" },
     { "src": "api/jobs-refresh.js", "use": "@vercel/node" },
     { "src": "api/jobs-sources-debug.js", "use": "@vercel/node" },
-    { "src": "index.html", "use": "@vercel/static" }
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "jobs.html", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/omdb(.*)", "dest": "/api/omdb.js" },
@@ -24,6 +25,7 @@
     { "src": "/api/jobs-cached", "dest": "/api/jobs-cached.js" },
     { "src": "/api/jobs-refresh", "dest": "/api/jobs-refresh.js" },
     { "src": "/api/jobs-sources-debug", "dest": "/api/jobs-sources-debug.js" },
+    { "src": "/jobs", "dest": "/jobs.html" },
     { "src": "/", "dest": "/index.html" }
   ]
 }

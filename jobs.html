@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Jobs search – data & analytics roles</title>
+	<style>
+		* { box-sizing: border-box; }
+		body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; margin: 0 auto; padding: 1.25rem; max-width: 1120px; background: #020617; color: #e2e8f0; min-height: 100vh; }
+		h1 { font-size: 1.35rem; margin: 0 0 0.5rem 0; }
+		h2 { font-size: 1.05rem; margin: 1.75rem 0 0.75rem 0; }
+		a { color: #60a5fa; text-decoration: none; }
+		a:hover { text-decoration: underline; }
+		.controls { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
+		.field { display: flex; flex-direction: column; gap: 0.3rem; min-width: 160px; }
+		.field label { font-size: 0.8rem; color: #94a3b8; }
+		input[type="text"], select { padding: 0.45rem 0.6rem; border-radius: 0.45rem; border: 1px solid #1f2937; background: #020617; color: #e5e7eb; font-size: 0.85rem; }
+		input[type="text"]:focus, select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 1px #4f46e5; }
+		button { padding: 0.45rem 0.8rem; border-radius: 999px; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; background: #4f46e5; color: white; }
+		button.secondary { background: #111827; color: #e5e7eb; border: 1px solid #1f2937; }
+		button:hover { opacity: 0.96; }
+		.bar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
+		.badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: #020617; border: 1px solid #1f2937; font-size: 0.7rem; color: #9ca3af; }
+		.badge strong { color: #e5e7eb; }
+		.source-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; }
+		.source-chip { border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.7rem; border: 1px solid #1f2937; background: #020617; color: #9ca3af; cursor: pointer; }
+		.source-chip.active { border-color: #4f46e5; background: #111827; color: #e5e7eb; }
+		.main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(260px, 1.5fr); gap: 1.25rem; margin-top: 1.25rem; align-items: flex-start; }
+		@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+		.jobs-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.8rem; }
+		.job-card { background: #020617; border-radius: 0.75rem; border: 1px solid #111827; padding: 0.7rem 0.7rem 0.65rem 0.7rem; cursor: pointer; transition: border-color 0.12s ease, transform 0.08s ease, background 0.12s ease; }
+		.job-card:hover { border-color: #4f46e5; background: #020617; transform: translateY(-1px); }
+		.job-title { font-size: 0.88rem; font-weight: 600; margin-bottom: 0.3rem; color: #e5e7eb; }
+		.job-meta { font-size: 0.76rem; color: #9ca3af; display: flex; flex-wrap: wrap; gap: 0.25rem 0.45rem; margin-bottom: 0.3rem; }
+		.job-badges { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem; }
+		.job-badge { font-size: 0.7rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #020617; border: 1px solid #111827; color: #9ca3af; }
+		.job-desc { font-size: 0.73rem; color: #6b7280; max-height: 3.1em; overflow: hidden; text-overflow: ellipsis; }
+		.empty { font-size: 0.8rem; color: #9ca3af; padding: 0.75rem 0; }
+		.sidebar { background: #020617; border-radius: 0.85rem; border: 1px solid #111827; padding: 0.85rem; font-size: 0.8rem; }
+		.sidebar h2 { margin-top: 0; font-size: 0.95rem; }
+		.sidebar-section { margin-top: 0.7rem; }
+		.sidebar-section p { margin: 0.1rem 0; }
+		.sidebar small { color: #6b7280; font-size: 0.7rem; }
+		.dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; margin-right: 0.25rem; }
+		.dot-ok { background: #22c55e; }
+		.dot-bad { background: #f97316; }
+		#status { font-size: 0.78rem; color: #9ca3af; margin-top: 0.5rem; min-height: 1.1rem; }
+		#detail-modal { position: fixed; inset: 0; background: rgba(15,23,42,0.76); display: none; align-items: center; justify-content: center; padding: 1rem; z-index: 40; }
+		#detail-modal.visible { display: flex; }
+		.detail-card { background: #020617; border-radius: 1rem; border: 1px solid #111827; max-width: 640px; width: 100%; padding: 1rem; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+		.detail-header { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; margin-bottom: 0.6rem; }
+		.detail-title { font-size: 1rem; font-weight: 600; }
+		.detail-meta { font-size: 0.78rem; color: #9ca3af; margin-bottom: 0.4rem; }
+		.detail-body { font-size: 0.8rem; color: #9ca3af; max-height: 260px; overflow-y: auto; padding-right: 0.25rem; }
+		.detail-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+		.detail-actions a { font-size: 0.78rem; }
+		.pill { border-radius: 999px; padding: 0.1rem 0.5rem; border: 1px solid #111827; font-size: 0.7rem; color: #9ca3af; }
+		.small-link { font-size: 0.72rem; color: #9ca3af; }
+	</style>
+</head>
+<body>
+	<header>
+		<h1>Jobs search &mdash; data / BI / analytics roles</h1>
+		<p style="margin:0;font-size:0.82rem;color:#9ca3af;">
+			This page calls the same Jobs APIs used by your analytics site, aggregating remote-friendly data/analytics roles from multiple portals.
+		</p>
+	</header>
+
+	<section class="controls">
+		<div class="field">
+			<label for="q">Query</label>
+			<input id="q" type="text" placeholder="e.g. data analyst" value="data analyst">
+		</div>
+		<div class="field" style="max-width:120px;">
+			<label for="days">Age (days)</label>
+			<select id="days">
+				<option value="1">Last 1 day</option>
+				<option value="2" selected>Last 2 days</option>
+				<option value="3">Last 3 days</option>
+				<option value="7">Last 7 days</option>
+			</select>
+		</div>
+		<div class="field" style="max-width:120px;">
+			<label for="limit">Limit</label>
+			<select id="limit">
+				<option value="25">25</option>
+				<option value="50" selected>50</option>
+				<option value="100">100</option>
+				<option value="180">180</option>
+			</select>
+		</div>
+		<div class="field" style="max-width:140px;">
+			<label for="sort">Sort by</label>
+			<select id="sort">
+				<option value="best">Best match (API)</option>
+				<option value="date">Newest first</option>
+			</select>
+		</div>
+	</section>
+
+	<section class="bar">
+		<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+			<button id="btn-search">Search (snapshot)</button>
+			<button id="btn-refresh" class="secondary">Refresh all portals (headless)</button>
+			<button id="btn-debug" class="secondary">Sources debug</button>
+		</div>
+		<div id="status"></div>
+	</section>
+
+	<section class="bar" id="summary-bar" style="margin-top:0.4rem;display:none;">
+		<div id="summary-badges"></div>
+	</section>
+
+	<main class="main">
+		<section>
+			<div id="source-filter" class="source-chips"></div>
+			<div id="jobs-list" class="jobs-list" style="margin-top:0.8rem;"></div>
+			<div id="jobs-empty" class="empty" style="display:none;">No jobs matched the current filters.</div>
+		</section>
+
+		<aside class="sidebar">
+			<h2>Sources &amp; portals</h2>
+			<div class="sidebar-section" id="sources-summary">
+				<small>Click "Sources debug" to see which portals are currently responding.</small>
+			</div>
+			<div class="sidebar-section" id="sources-detail"></div>
+			<div class="sidebar-section" style="margin-top:1rem;">
+				<p style="margin:0 0 0.25rem 0;"><strong>About this API</strong></p>
+				<p style="margin:0.1rem 0;">
+					Results currently come from remote-friendly boards like
+					<span class="pill">WeWorkRemotely</span>
+					<span class="pill">RemoteOK</span>
+					<span class="pill">Jobscollider</span>
+					and others. Some feeds (e.g. Indeed, Wellfound) may be blocked (403) and are skipped automatically.
+				</p>
+			</div>
+		</aside>
+	</main>
+
+	<div id="detail-modal">
+		<div class="detail-card">
+			<div class="detail-header">
+				<div>
+					<div id="detail-title" class="detail-title"></div>
+					<div id="detail-meta" class="detail-meta"></div>
+				</div>
+				<button id="detail-close" class="secondary" style="padding:0.25rem 0.5rem;font-size:0.72rem;">Close</button>
+			</div>
+			<div class="detail-body" id="detail-body"></div>
+			<div class="detail-actions" id="detail-actions"></div>
+		</div>
+	</div>
+
+	<script>
+		(function () {
+			var base = window.location.origin;
+			var allJobs = [];
+			var filteredJobs = [];
+			var sourceCounts = {};
+			var activeSource = 'all';
+
+			function esc(s) { return (s == null ? '' : String(s)).replace(/</g, '&lt;'); }
+
+			function setStatus(msg) {
+				var el = document.getElementById('status');
+				if (el) el.textContent = msg || '';
+			}
+
+			function readParams() {
+				var q = (document.getElementById('q').value || '').trim() || 'data analyst';
+				var days = document.getElementById('days').value || '2';
+				var limit = document.getElementById('limit').value || '50';
+				var sort = document.getElementById('sort').value || 'best';
+				return { q: q, days: days, limit: limit, sort: sort };
+			}
+
+			function computeSourceCounts(jobs) {
+				var counts = {};
+				jobs.forEach(function (j) {
+					var s = j.source || 'unknown';
+					counts[s] = (counts[s] || 0) + 1;
+				});
+				return counts;
+			}
+
+			function updateSummary() {
+				var bar = document.getElementById('summary-bar');
+				var container = document.getElementById('summary-badges');
+				if (!bar || !container) return;
+				if (!allJobs.length) { bar.style.display = 'none'; return; }
+				bar.style.display = 'flex';
+				var uniqueSources = Object.keys(sourceCounts || {});
+				var badges = '';
+				badges += '<span class="badge"><strong>' + filteredJobs.length + '</strong> jobs</span>';
+				if (uniqueSources.length) {
+					badges += '<span class="badge"><strong>' + uniqueSources.length + '</strong> sources</span>';
+				}
+				container.innerHTML = badges;
+			}
+
+			function renderSourceFilter() {
+				var el = document.getElementById('source-filter');
+				if (!el) return;
+				el.innerHTML = '';
+				if (!Object.keys(sourceCounts || {}).length) return;
+				var anyChip = document.createElement('button');
+				anyChip.type = 'button';
+				anyChip.className = 'source-chip' + (activeSource === 'all' ? ' active' : '');
+				anyChip.textContent = 'All sources';
+				anyChip.onclick = function () {
+					activeSource = 'all';
+					applyFilters();
+				};
+				el.appendChild(anyChip);
+
+				Object.keys(sourceCounts).sort(function (a, b) { return sourceCounts[b] - sourceCounts[a]; }).forEach(function (src) {
+					var chip = document.createElement('button');
+					chip.type = 'button';
+					chip.className = 'source-chip' + (activeSource === src ? ' active' : '');
+					chip.textContent = src + ' · ' + sourceCounts[src];
+					chip.onclick = function () {
+						activeSource = (activeSource === src ? 'all' : src);
+						applyFilters();
+					};
+					el.appendChild(chip);
+				});
+			}
+
+			function applyFilters() {
+				var params = readParams();
+				var sortMode = params.sort;
+				filteredJobs = allJobs.filter(function (j) {
+					if (activeSource !== 'all' && j.source !== activeSource) return false;
+					return true;
+				});
+
+				if (sortMode === 'date') {
+					filteredJobs.sort(function (a, b) {
+						var da = new Date(a.date || 0).getTime();
+						var db = new Date(b.date || 0).getTime();
+						return db - da;
+					});
+				}
+
+				updateSummary();
+				renderJobs();
+			}
+
+			function renderJobs() {
+				var list = document.getElementById('jobs-list');
+				var empty = document.getElementById('jobs-empty');
+				if (!list || !empty) return;
+
+				if (!filteredJobs.length) {
+					list.innerHTML = '';
+					empty.style.display = 'block';
+					return;
+				}
+				empty.style.display = 'none';
+
+				var html = '';
+				filteredJobs.forEach(function (j, idx) {
+					var metaParts = [];
+					if (j.company) metaParts.push(esc(j.company));
+					if (j.location) metaParts.push(esc(j.location));
+					if (j.postedAgo) metaParts.push(esc(j.postedAgo));
+					else if (j.dateFormatted) metaParts.push(esc(j.dateFormatted));
+					var meta = metaParts.join(' · ');
+					var badges = '';
+					if (j.source) badges += '<span class="job-badge">Source: ' + esc(j.source) + '</span>';
+					if (Array.isArray(j.tags) && j.tags.length) {
+						badges += '<span class="job-badge">' + esc(j.tags.slice(0, 2).join(', ')) + '</span>';
+					}
+					html += '<article class="job-card" data-idx="' + idx + '">' +
+						'<div class="job-title">' + esc(j.title || 'Untitled') + '</div>' +
+						(meta ? '<div class="job-meta">' + meta + '</div>' : '') +
+						(badges ? '<div class="job-badges">' + badges + '</div>' : '') +
+						'<div class="job-desc">' + esc((j.description || '').replace(/<[^>]*>/g, '')).slice(0, 260) + '</div>' +
+						'</article>';
+				});
+				list.innerHTML = html;
+
+				Array.prototype.forEach.call(list.querySelectorAll('.job-card'), function (card) {
+					card.addEventListener('click', function () {
+						var idx = Number(card.getAttribute('data-idx'));
+						if (!isNaN(idx) && filteredJobs[idx]) openDetail(filteredJobs[idx]);
+					});
+				});
+			}
+
+			function openDetail(job) {
+				var modal = document.getElementById('detail-modal');
+				if (!modal || !job) return;
+				document.getElementById('detail-title').textContent = job.title || 'Job details';
+				var metaParts = [];
+				if (job.company) metaParts.push(job.company);
+				if (job.location) metaParts.push(job.location);
+				if (job.postedAgo) metaParts.push(job.postedAgo);
+				else if (job.dateFormatted) metaParts.push(job.dateFormatted);
+				if (job.source) metaParts.push('Source: ' + job.source);
+				document.getElementById('detail-meta').textContent = metaParts.join(' · ');
+				var desc = (job.description || '').replace(/<[^>]*>/g, '').trim();
+				document.getElementById('detail-body').textContent = desc || 'No description available.';
+				var actions = document.getElementById('detail-actions');
+				var html = '';
+				if (job.url) {
+					html += '<a href="' + esc(job.url) + '" target="_blank" rel="noopener"><button>Apply / open job post</button></a>';
+				}
+				if (job.source) {
+					html += '<span class="small-link">Source: ' + esc(job.source) + '</span>';
+				}
+				actions.innerHTML = html;
+				modal.classList.add('visible');
+			}
+
+			function closeDetail() {
+				var modal = document.getElementById('detail-modal');
+				if (modal) modal.classList.remove('visible');
+			}
+
+			function handleSnapshotResponse(data) {
+				if (!data || !data.ok || !Array.isArray(data.jobs)) {
+					setStatus('Snapshot API error. See console.');
+					console.error('jobs-snapshot error', data);
+					allJobs = [];
+					filteredJobs = [];
+					sourceCounts = {};
+					updateSummary();
+					renderSourceFilter();
+					renderJobs();
+					return;
+				}
+				allJobs = data.jobs || [];
+				sourceCounts = data.sourceCounts || computeSourceCounts(allJobs);
+				updateSummary();
+				renderSourceFilter();
+				applyFilters();
+				setStatus('Loaded ' + (data.count || allJobs.length) + ' jobs from snapshot.');
+			}
+
+			function callSnapshot() {
+				var p = readParams();
+				setStatus('Loading snapshot…');
+				fetch(base + '/api/jobs-snapshot?q=' + encodeURIComponent(p.q) +
+					'&days=' + encodeURIComponent(p.days) +
+					'&limit=' + encodeURIComponent(p.limit))
+					.then(function (r) { return r.ok ? r.json() : null; })
+					.then(handleSnapshotResponse)
+					.catch(function (err) {
+						console.error('jobs-snapshot network error', err);
+						setStatus('Network error calling jobs-snapshot.');
+					});
+			}
+
+			function callRefresh() {
+				var p = readParams();
+				setStatus('Triggering headless scrape across all portals (may take 30–60 seconds)…');
+				fetch(base + '/api/jobs-refresh?q=' + encodeURIComponent(p.q) +
+					'&days=' + encodeURIComponent(p.days) +
+					'&location=' + encodeURIComponent('remote'))
+					.then(function (r) { return r.ok ? r.json() : null; })
+					.then(function (data) {
+						if (!data || !data.ok) {
+							setStatus('jobs-refresh failed or not available. See console.');
+							console.error('jobs-refresh error', data);
+							return;
+						}
+						setStatus('Headless scrape finished. Loading latest snapshot / cached jobs…');
+						callSnapshot();
+					})
+					.catch(function (err) {
+						console.error('jobs-refresh network error', err);
+						setStatus('Network error calling jobs-refresh.');
+					});
+			}
+
+			function callSourcesDebug() {
+				setStatus('Checking sources…');
+				fetch(base + '/api/jobs-sources-debug')
+					.then(function (r) { return r.ok ? r.json() : null; })
+					.then(function (data) {
+						if (!data || !data.ok) {
+							setStatus('jobs-sources-debug error or not deployed.');
+							console.error('jobs-sources-debug error', data);
+							return;
+						}
+						var s = data.summary || {};
+						var results = data.results || {};
+						var summaryEl = document.getElementById('sources-summary');
+						var detailEl = document.getElementById('sources-detail');
+						if (summaryEl) {
+							var api = s.api || {};
+							var rss = s.rss || {};
+							var proxy = s.proxy || {};
+							summaryEl.innerHTML =
+								'<p><span class="badge"><strong>APIs</strong> ' + (api.working || 0) + '/' + (api.total || 0) + ' working</span> ' +
+								'<span class="badge"><strong>RSS</strong> ' + (rss.working || 0) + '/' + (rss.total || 0) + ' working</span> ' +
+								'<span class="badge"><strong>Proxies</strong> ' + (proxy.working || 0) + '/' + (proxy.total || 0) + ' working</span></p>' +
+								'<small>Some feeds (e.g. Indeed, Wellfound) may return 403 and are skipped.</small>';
+						}
+						if (detailEl) {
+							var html = '';
+							['api', 'rss', 'proxy'].forEach(function (group) {
+								var arr = results[group] || [];
+								if (!arr.length) return;
+								html += '<div class="sidebar-section"><p style="margin:0 0 0.25rem 0;"><strong>' +
+									group.toUpperCase() + '</strong></p>';
+								arr.forEach(function (item) {
+									var ok = item && item.ok;
+									var sample = (item && item.sample && item.sampleTitle) || (item && item.sample && item.sample[1]) || '';
+									var name = item.source || 'unknown';
+									html += '<p style="margin:0.1rem 0;"><span class="dot ' + (ok ? 'dot-ok' : 'dot-bad') + '"></span>' +
+										esc(name) + ' &mdash; ' + (ok ? 'OK' : 'ERROR') +
+										(sample ? ' <span style="color:#6b7280;">&middot; e.g. ' + esc(sample) + '</span>' : '') +
+										'</p>';
+								});
+								html += '</div>';
+							});
+							detailEl.innerHTML = html;
+						}
+						setStatus('Sources checked. See sidebar for details.');
+					})
+					.catch(function (err) {
+						console.error('jobs-sources-debug network error', err);
+						setStatus('Network error calling jobs-sources-debug.');
+					});
+			}
+
+			document.getElementById('btn-search').addEventListener('click', callSnapshot);
+			document.getElementById('btn-refresh').addEventListener('click', callRefresh);
+			document.getElementById('btn-debug').addEventListener('click', callSourcesDebug);
+			document.getElementById('sort').addEventListener('change', applyFilters);
+			document.getElementById('detail-close').addEventListener('click', closeDetail);
+			document.getElementById('detail-modal').addEventListener('click', function (e) {
+				if (e.target === this) closeDetail();
+			});
+
+			// Initial load
+			callSnapshot();
+		})();
+	</script>
+</body>
+</html>
+
