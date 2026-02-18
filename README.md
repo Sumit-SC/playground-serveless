@@ -107,6 +107,18 @@ The app can fetch poster images from [CineMaterial](https://www.cinematerial.com
 
 ---
 
+## Jobs snapshot: sources and headless browser
+
+**Sources (no config):** The jobs aggregator pulls from **RemoteOK** (JSON API), **Remotive** (API + RSS), **WeWorkRemotely** (RSS), **Jobscollider** (RSS), **Wellfound** (RSS), and **Working Nomads** (our proxy). RSS feeds are fetched **directly** from the job boards (no self-call), so you get multiple sources even on first deploy.
+
+**More results:** Use `?limit=200` or `?limit=400` (max). Default is 180. Use `?days=14` for a 2-week window.
+
+**Response:** Each response includes `sources` and `sourceCounts` (e.g. `{ "remoteok": 45, "remotive": 32 }`) so you can see which boards contributed.
+
+**Headless browser (optional):** To add jobs scraped from WeWorkRemotely via headless Chromium, set **`ENABLE_HEADLESS=1`** in Vercel → Settings → Environment Variables, then redeploy. The jobs-snapshot API will call the headless scraper and merge those jobs (source: `weworkremotely_headless`). Headless is slow (~15–25s) and uses more memory; enable only if you want maximum coverage.
+
+---
+
 ## Preventing API abuse (is an open API safe?)
 
 **What “open” means:** If you don’t set `API_SECRET`, anyone who knows your API URL can call it. Your **OMDb key stays on the server** and is never sent to the client, so it’s not exposed. The main risk is **quota exhaustion**: OMDb free tier (e.g. 1,000 requests/day) and Vercel usage can be used up by someone hammering the endpoint.
@@ -136,10 +148,10 @@ The app can fetch poster images from [CineMaterial](https://www.cinematerial.com
 | `/api/omdb?stats=1` | GET | Daily stats (by type, category, source) | Same |
 | `/api/auth` | GET | UI secret check for test UI | `UI_SECRET` |
 | `/api/cinematerial` | GET | CineMaterial poster scraper by IMDb ID | None |
-| `/api/jobs-snapshot` | GET | Aggregated jobs (RemoteOK, Remotive, RSS, WorkingNomads) | None; uses `/api/rss` and `/api/workingnomads` internally |
+| `/api/jobs-snapshot` | GET | Aggregated jobs from many sources. Each job has `date`, `dateFormatted`, `postedAgo`. Response includes `sources` and `sourceCounts` (per-source counts). | Optional: `ENABLE_HEADLESS=1` to include WeWorkRemotely headless scrape. Query: `q`, `days`, `limit` (default 180, max 400). |
 | `/api/rss` | GET | RSS/Atom proxy (CORS + allowlist) | None |
 | `/api/workingnomads` | GET | Working Nomads jobs proxy | None |
-| `/api/headless-scrape-weworkremotely` | GET | Optional WeWorkRemotely scraper | `ENABLE_HEADLESS=1` to enable |
+| `/api/headless-scrape-weworkremotely` | GET | WeWorkRemotely scraper (headless browser). Also used by jobs-snapshot when `ENABLE_HEADLESS=1`. | `ENABLE_HEADLESS=1` to enable |
 
 **Example calls:**
 
@@ -150,8 +162,8 @@ curl "https://YOUR-APP.vercel.app/api/omdb?s=batman"
 curl "https://YOUR-APP.vercel.app/api/omdb?i=tt1375666"
 curl "https://YOUR-APP.vercel.app/api/omdb?usage=1"
 
-# Jobs (analyst-focused, last 7 days, up to 120 results)
-curl "https://YOUR-APP.vercel.app/api/jobs-snapshot?q=data%20analyst&days=7&limit=120"
+# Jobs (analyst-focused, last 7 days, up to 180 results; use limit=400 for more)
+curl "https://YOUR-APP.vercel.app/api/jobs-snapshot?q=data%20analyst&days=7&limit=180"
 
 # RSS proxy (url and count required; host allowlisted)
 curl "https://YOUR-APP.vercel.app/api/rss?url=https%3A%2F%2Fremotive.com%2Ffeed&count=20"

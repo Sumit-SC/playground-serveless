@@ -12,9 +12,12 @@
  */
 
 const DEFAULT_DAYS = 7;
-const DEFAULT_LIMIT = 120;
-const MAX_LIMIT = 250;
-const TIMEOUT_MS = 10_000;
+const DEFAULT_LIMIT = 180;
+const MAX_LIMIT = 400;
+const TIMEOUT_MS = 12_000;
+const RSS_TIMEOUT_MS = 15_000;
+
+const USER_AGENT = 'Mozilla/5.0 (compatible; JobAggregator/1.0; +https://github.com)';
 
 // Role priority (Remote primary, India secondary)
 // Tier 1: analyst/BI/analytics roles (as requested)
@@ -73,7 +76,34 @@ function parseDateLike(input) {
 	return null;
 }
 
+/** Human-readable date (e.g. "17 Feb 2025") and relative time (e.g. "2 days ago") for display/filtering. */
+function formatDateDisplay(dateInput) {
+	const d = parseDateLike(dateInput);
+	if (!d || isNaN(d.getTime())) return { dateFormatted: '', postedAgo: '' };
+	const now = Date.now();
+	const ms = now - d.getTime();
+	const sec = Math.floor(ms / 1000);
+	const min = Math.floor(sec / 60);
+	const hr = Math.floor(min / 60);
+	const day = Math.floor(hr / 24);
+	const week = Math.floor(day / 7);
+	const month = Math.floor(day / 30);
+	const year = Math.floor(day / 365);
+	let postedAgo = '';
+	if (sec < 60) postedAgo = 'just now';
+	else if (min < 60) postedAgo = min === 1 ? '1 minute ago' : min + ' minutes ago';
+	else if (hr < 24) postedAgo = hr === 1 ? '1 hour ago' : hr + ' hours ago';
+	else if (day < 7) postedAgo = day === 1 ? '1 day ago' : day + ' days ago';
+	else if (week < 4) postedAgo = week === 1 ? '1 week ago' : week + ' weeks ago';
+	else if (month < 12) postedAgo = month === 1 ? '1 month ago' : month + ' months ago';
+	else postedAgo = year === 1 ? '1 year ago' : year + ' years ago';
+	const dateFormatted = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+	return { dateFormatted, postedAgo };
+}
+
 function normalizeJob(j) {
+	const rawDate = j.date || nowIso();
+	const { dateFormatted, postedAgo } = formatDateDisplay(rawDate);
 	return {
 		id: j.id || ('job_' + Math.random().toString(36).slice(2)),
 		title: j.title || 'Untitled',
@@ -82,7 +112,9 @@ function normalizeJob(j) {
 		url: j.url || '#',
 		description: j.description || '',
 		source: j.source || 'other',
-		date: j.date || nowIso(),
+		date: rawDate,
+		dateFormatted: dateFormatted,
+		postedAgo: postedAgo,
 		tags: Array.isArray(j.tags) ? j.tags : [],
 		// Optional scoring metadata (kept for debugging / future UI)
 		_rank: typeof j._rank === 'number' ? j._rank : 0,
@@ -90,11 +122,18 @@ function normalizeJob(j) {
 	};
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, opts = {}) {
 	const ctrl = new AbortController();
-	const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+	const t = setTimeout(() => ctrl.abort(), opts.timeout || TIMEOUT_MS);
 	try {
-		const r = await fetch(url, { signal: ctrl.signal });
+		const r = await fetch(url, {
+			signal: ctrl.signal,
+			headers: {
+				'User-Agent': USER_AGENT,
+				'Accept': opts.accept || 'application/json',
+				...(opts.headers || {})
+			}
+		});
 		if (!r.ok) return null;
 		return await r.json();
 	} catch (e) {
@@ -104,9 +143,59 @@ async function fetchJson(url) {
 	}
 }
 
+// Hosts we're allowed to fetch RSS from directly (same as rss.js allowlist)
+const RSS_ALLOWED_HOSTS = new Set([
+	'remoteok.io', 'www.remoteok.io', 'remoteok.com', 'www.remoteok.com',
+	'weworkremotely.com', 'www.weworkremotely.com',
+	'remotive.com', 'www.remotive.com',
+	'jobscollider.com', 'www.jobscollider.com',
+	'wellfound.com', 'www.wellfound.com'
+]);
+
+function stripTag(xml, tag) {
+	const re = new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)<\\/' + tag + '>', 'i');
+	const m = String(xml || '').match(re);
+	if (!m) return '';
+	return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+}
+
+/** Fetch RSS/Atom feed directly and return items (no self-call to /api/rss). */
+async function fetchRssDirect(feedUrl, count) {
+	try {
+		const u = new URL(feedUrl);
+		if (!RSS_ALLOWED_HOSTS.has((u.hostname || '').toLowerCase())) return [];
+		const ctrl = new AbortController();
+		const t = setTimeout(() => ctrl.abort(), RSS_TIMEOUT_MS);
+		const r = await fetch(feedUrl, {
+			signal: ctrl.signal,
+			headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/rss+xml, application/atom+xml, text/xml, */*' }
+		});
+		clearTimeout(t);
+		if (!r.ok) return [];
+		const xml = await r.text();
+		const items = [];
+		const itemBlocks = xml.match(/<item[^>]*>[\s\S]*?<\/item>/gi) || xml.match(/<entry[^>]*>[\s\S]*?<\/entry>/gi) || [];
+		for (let i = 0; i < Math.min(itemBlocks.length, count || 50); i++) {
+			const block = itemBlocks[i];
+			const title = stripTag(block, 'title');
+			let link = stripTag(block, 'link');
+			if (!link && block.includes('href=')) {
+				const href = block.match(/href=["']([^"']+)["']/i);
+				if (href) link = href[1];
+			}
+			const pubDate = stripTag(block, 'pubDate') || stripTag(block, 'published') || stripTag(block, 'updated') || stripTag(block, 'dc:date');
+			if (title && link) items.push({ title, link, pubDate, description: stripTag(block, 'description') || stripTag(block, 'summary') });
+		}
+		return items;
+	} catch (e) {
+		return [];
+	}
+}
+
+/** Fallback: fetch via our /api/rss when baseUrl is set (e.g. same deployment). */
 async function fetchRss(baseUrl, feedUrl, count) {
 	const u = baseUrl + '/api/rss?url=' + encodeURIComponent(feedUrl) + '&count=' + (count || 50);
-	const data = await fetchJson(u);
+	const data = await fetchJson(u, { timeout: RSS_TIMEOUT_MS });
 	if (!data || !data.ok || !Array.isArray(data.items)) return [];
 	return data.items;
 }
@@ -184,19 +273,22 @@ module.exports = async (req, res) => {
 	const keywords = [
 		'data analyst', 'analyst', 'business analyst', 'product analyst', 'decision scientist',
 		'bi', 'business intelligence', 'analytics', 'analytics engineer',
-		'data scientist', 'machine learning', 'ml engineer', 'data engineer'
+		'data scientist', 'machine learning', 'ml engineer', 'data engineer',
+		'data', 'remote'
 	];
 	const now = Date.now();
 	const maxAgeMs = days * 24 * 60 * 60 * 1000;
 
 	let jobs = [];
 
-	// 1) RemoteOK JSON API (fast)
+	// 1) RemoteOK JSON API (fast) — API returns array; first element can be metadata
 	const remoteOk = await fetchJson('https://remoteok.com/api');
-	if (Array.isArray(remoteOk)) {
-		for (let i = 0; i < remoteOk.length; i++) {
-			const it = remoteOk[i];
-			if (!it || !it.position || !it.url) continue;
+	const remoteOkList = Array.isArray(remoteOk)
+		? remoteOk
+		: (remoteOk && Array.isArray(remoteOk.jobs) ? remoteOk.jobs : []);
+	for (let i = 0; i < remoteOkList.length; i++) {
+		const it = remoteOkList[i];
+		if (!it || typeof it !== 'object' || !it.position || !it.url) continue;
 			const full = (it.position + ' ' + (it.description || '') + ' ' + (Array.isArray(it.tags) ? it.tags.join(' ') : ''));
 			if (!containsAny(full, keywords)) continue;
 			const role = roleTierRank(it.position || '');
@@ -214,14 +306,13 @@ module.exports = async (req, res) => {
 				_rank: role.score + locScore,
 				_roleTier: role.tier
 			}));
-		}
 	}
 
 	// 2) Remotive public API (fast, but rate limited sometimes)
 	const remotive = await fetchJson('https://remotive.com/api/remote-jobs?search=' + encodeURIComponent(q));
 	const remotiveJobs = remotive && (remotive.jobs || remotive['remote-jobs'] || remotive.results);
 	if (Array.isArray(remotiveJobs)) {
-		for (let i = 0; i < remotiveJobs.length && i < 60; i++) {
+		for (let i = 0; i < Math.min(remotiveJobs.length, 80); i++) {
 			const it = remotiveJobs[i];
 			if (!it || !it.title || !it.url) continue;
 			const full = (it.title + ' ' + (it.description_plain || it.description || '') + ' ' + (Array.isArray(it.tags) ? it.tags.join(' ') : ''));
@@ -244,7 +335,7 @@ module.exports = async (req, res) => {
 		}
 	}
 
-	// 3) RSS sources (reliable, updated)
+	// 3) RSS sources — fetch directly (no self-call) so we always get multiple sources
 	const rssFeeds = [
 		{ source: 'remotive', url: 'https://remotive.com/feed' },
 		{ source: 'remotive', url: 'https://remotive.com/remote-jobs/feed/data' },
@@ -252,16 +343,15 @@ module.exports = async (req, res) => {
 		{ source: 'weworkremotely', url: 'https://weworkremotely.com/remote-jobs.rss' },
 		{ source: 'jobscollider', url: 'https://jobscollider.com/remote-jobs.rss' },
 		{ source: 'jobscollider', url: 'https://jobscollider.com/remote-data-jobs.rss' },
+		{ source: 'remoteok', url: 'https://remoteok.com/remote-jobs.rss' },
 		{ source: 'remoteok', url: 'https://remoteok.io/remote-jobs.rss' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-science&remote=true' }
 	];
 
-	const rssResults = baseUrl
-		? await Promise.allSettled(rssFeeds.map(async (f) => {
-			const items = await fetchRss(baseUrl, f.url, 50);
-			return { source: f.source, items };
-		}))
-		: [];
+	const rssResults = await Promise.allSettled(rssFeeds.map(async (f) => {
+		const items = await fetchRssDirect(f.url, 50);
+		return { source: f.source, items };
+	}));
 
 	rssResults.forEach((r) => {
 		if (!r || r.status !== 'fulfilled' || !r.value) return;
@@ -294,7 +384,7 @@ module.exports = async (req, res) => {
 	const wn = baseUrl
 		? await fetchJson(baseUrl + '/api/workingnomads?q=' + encodeURIComponent(q) + '&count=80')
 		: null;
-	if (wn && wn.ok && Array.isArray(wn.jobs)) {
+		if (wn && wn.ok && Array.isArray(wn.jobs)) {
 		wn.jobs.forEach((it) => {
 			if (!it || !it.title || !it.url) return;
 			const full = (it.title + ' ' + (it.description || ''));
@@ -315,6 +405,36 @@ module.exports = async (req, res) => {
 				_roleTier: role.tier
 			}));
 		});
+	}
+
+	// 5) Headless browser (WeWorkRemotely) — only when ENABLE_HEADLESS=1; runs in parallel with short timeout
+	const headlessEnabled = String(process.env.ENABLE_HEADLESS || '').trim() === '1';
+	if (headlessEnabled && baseUrl) {
+		try {
+			const headlessPromise = fetchJson(baseUrl + '/api/headless-scrape-weworkremotely', { timeout: 22_000 });
+			const headless = await Promise.race([headlessPromise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 22_000))]);
+			if (headless && headless.ok && Array.isArray(headless.jobs)) {
+				headless.jobs.forEach((it) => {
+					if (!it || !it.title || !it.url) return;
+					const full = (it.title + ' ' + (it.description || ''));
+					if (!containsAny(full, keywords)) return;
+					const role = roleTierRank(it.title || '');
+					jobs.push(normalizeJob({
+						id: 'weworkremotely_headless_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
+						title: it.title,
+						company: 'Unknown',
+						location: 'Remote',
+						url: it.url,
+						description: it.description || '',
+						source: 'weworkremotely_headless',
+						date: nowIso(),
+						tags: ['headless'],
+						_rank: role.score + 120,
+						_roleTier: role.tier
+					}));
+				});
+			}
+		} catch (e) { /* headless optional */ }
 	}
 
 	// Freshness filter (last N days)
@@ -346,12 +466,18 @@ module.exports = async (req, res) => {
 
 	jobs = jobs.slice(0, limit);
 
+	const sources = Array.from(new Set(jobs.map(j => j.source))).sort();
+	const sourceCounts = {};
+	jobs.forEach((j) => { sourceCounts[j.source] = (sourceCounts[j.source] || 0) + 1; });
+
 	return res.status(200).json({
 		ok: true,
 		query: q,
 		days,
+		limit,
 		count: jobs.length,
-		sources: Array.from(new Set(jobs.map(j => j.source))).sort(),
+		sources,
+		sourceCounts,
 		jobs
 	});
 };
