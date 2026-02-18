@@ -1,6 +1,7 @@
 /**
  * Unified headless scraper for all major job portals.
- * Scrapes: LinkedIn, Naukri, Indeed, Monster, Foundit, Glassdoor, Hirist, JobsAaj
+ * Scrapes: LinkedIn, Naukri, Indeed, Monster, Foundit, Glassdoor, Hirist, JobsAaj,
+ *         TimesJobs, Shine, ZipRecruiter, SimplyHired, CareerBuilder, Dice, Adzuna, Jooble, Freshersworld
  * 
  * Usage: /api/headless-scrape-all-portals?q=data+analyst&days=3&location=remote
  * 
@@ -373,6 +374,339 @@ async function scrapeJobsAaj(page, q, location) {
 	}
 }
 
+async function scrapeTimesJobs(page, q, location) {
+	try {
+		const url = `https://www.timesjobs.com/candidate/job-search.html?searchType=personalizedSearch&from=submit&txtKeywords=${encodeURIComponent(q)}&txtLocation=${location || ''}`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.joblist, .job-bx, [class*="job"]', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.joblist, .job-bx, [class*="job-bx"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/job-detail/"], a[href*="/job/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.timesjobs.com' + href : href;
+				const companyEl = card.querySelector('.comp-name, [class*="company"]');
+				const locEl = card.querySelector('.loc, [class*="location"]');
+				const timeEl = card.querySelector('.posted, [class*="posted"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : 'India',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'timesjobs'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'timesjobs', jobs, url };
+	} catch (e) {
+		return { source: 'timesjobs', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeShine(page, q, location) {
+	try {
+		const url = `https://www.shine.com/job-search/${encodeURIComponent(q)}-jobs${location ? '-' + location : ''}`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.jobCard, .job-listing', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.jobCard, .job-listing, [class*="job-card"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/job/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.shine.com' + href : href;
+				const companyEl = card.querySelector('.company-name, [class*="company"]');
+				const locEl = card.querySelector('.location, [class*="loc"]');
+				const timeEl = card.querySelector('.posted-date, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : 'India',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'shine'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'shine', jobs, url };
+	} catch (e) {
+		return { source: 'shine', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeZipRecruiter(page, q, location) {
+	try {
+		const url = `https://www.ziprecruiter.com/jobs-search?search=${encodeURIComponent(q)}&location=${location || 'remote'}&days=3`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.job_content, [data-testid="job-card"]', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.job_content, [data-testid="job-card"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/job/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.ziprecruiter.com' + href : href;
+				const companyEl = card.querySelector('.company_name, [class*="company"]');
+				const locEl = card.querySelector('.location, [class*="location"]');
+				const timeEl = card.querySelector('.posted_date, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : '',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'ziprecruiter'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'ziprecruiter', jobs, url };
+	} catch (e) {
+		return { source: 'ziprecruiter', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeSimplyHired(page, q, location) {
+	try {
+		const url = `https://www.simplyhired.com/search?q=${encodeURIComponent(q)}&l=${location || 'remote'}&fdb=3`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.SerpJob, [class*="job-card"]', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.SerpJob, [class*="job-card"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/job/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.simplyhired.com' + href : href;
+				const companyEl = card.querySelector('.jobposting-company, [class*="company"]');
+				const locEl = card.querySelector('.jobposting-location, [class*="location"]');
+				const timeEl = card.querySelector('.jobposting-date, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : '',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'simplyhired'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'simplyhired', jobs, url };
+	} catch (e) {
+		return { source: 'simplyhired', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeCareerBuilder(page, q, location) {
+	try {
+		const url = `https://www.careerbuilder.com/jobs?keywords=${encodeURIComponent(q)}&location=${location || 'remote'}&posted=3`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.data-results-content-parent, [class*="job-card"]', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.data-results-content-parent, [class*="job-card"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/job/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.careerbuilder.com' + href : href;
+				const companyEl = card.querySelector('.data-details, [class*="company"]');
+				const locEl = card.querySelector('.data-details, [class*="location"]');
+				const timeEl = card.querySelector('.data-results-publish-date, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : '',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'careerbuilder'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'careerbuilder', jobs, url };
+	} catch (e) {
+		return { source: 'careerbuilder', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeDice(page, q, location) {
+	try {
+		const url = `https://www.dice.com/jobs?q=${encodeURIComponent(q)}&location=${location || 'remote'}&postedDate=3`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.search-result, [class*="job-card"]', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.search-result, [class*="job-card"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/jobs/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.dice.com' + href : href;
+				const companyEl = card.querySelector('.hidden-phone, [class*="company"]');
+				const locEl = card.querySelector('.jobLoc, [class*="location"]');
+				const timeEl = card.querySelector('.posted-date, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : '',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'dice'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'dice', jobs, url };
+	} catch (e) {
+		return { source: 'dice', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeAdzuna(page, q, location) {
+	try {
+		const url = `https://www.adzuna.com/search?q=${encodeURIComponent(q)}&where=${location || 'remote'}&days=3`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.job-result, [class*="job-card"]', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.job-result, [class*="job-card"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/jobs/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.adzuna.com' + href : href;
+				const companyEl = card.querySelector('.company, [class*="company"]');
+				const locEl = card.querySelector('.location, [class*="loc"]');
+				const timeEl = card.querySelector('.posted, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : '',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'adzuna'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'adzuna', jobs, url };
+	} catch (e) {
+		return { source: 'adzuna', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeJooble(page, q, location) {
+	try {
+		const url = `https://jooble.org/SearchResult?ukw=${encodeURIComponent(q)}&rgns=${location || 'remote'}&date=3`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.vacancy, [class*="job-card"]', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.vacancy, [class*="job-card"]');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/job/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://jooble.org' + href : href;
+				const companyEl = card.querySelector('.company-name, [class*="company"]');
+				const locEl = card.querySelector('.location, [class*="loc"]');
+				const timeEl = card.querySelector('.date, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : '',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'jooble'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'jooble', jobs, url };
+	} catch (e) {
+		return { source: 'jooble', jobs: [], error: e.message };
+	}
+}
+
+async function scrapeFreshersworld(page, q, location) {
+	try {
+		const url = `https://www.freshersworld.com/jobs/search?q=${encodeURIComponent(q)}&location=${location || ''}`;
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('.job-container, .job-item', { timeout: 12_000 }).catch(() => {});
+		
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const cards = document.querySelectorAll('.job-container, .job-item');
+			for (const card of cards) {
+				const link = card.querySelector('a[href*="/jobs/"]');
+				if (!link) continue;
+				const title = (link.textContent || '').trim();
+				if (!title) continue;
+				const href = link.getAttribute('href') || '';
+				const fullUrl = href.startsWith('/') ? 'https://www.freshersworld.com' + href : href;
+				const companyEl = card.querySelector('.company-name, [class*="company"]');
+				const locEl = card.querySelector('.location, [class*="loc"]');
+				const timeEl = card.querySelector('.posted-date, [class*="date"]');
+				out.push({
+					title,
+					company: companyEl ? companyEl.textContent.trim() : 'Unknown',
+					location: locEl ? locEl.textContent.trim() : 'India',
+					url: fullUrl,
+					date: timeEl ? timeEl.textContent.trim() : '',
+					source: 'freshersworld'
+				});
+				if (out.length >= 30) break;
+			}
+			return out;
+		});
+		return { source: 'freshersworld', jobs, url };
+	} catch (e) {
+		return { source: 'freshersworld', jobs: [], error: e.message };
+	}
+}
+
 // Main scraper function
 async function scrapeAllPortals(q, days, location) {
 	const query = q || 'data analyst';
@@ -403,7 +737,16 @@ async function scrapeAllPortals(q, days, location) {
 			scrapeFoundit(page, query, loc).catch(e => ({ source: 'foundit', jobs: [], error: e.message })),
 			scrapeGlassdoor(page, query, loc).catch(e => ({ source: 'glassdoor', jobs: [], error: e.message })),
 			scrapeHirist(page, query).catch(e => ({ source: 'hirist', jobs: [], error: e.message })),
-			scrapeJobsAaj(page, query, loc).catch(e => ({ source: 'jobsaaj', jobs: [], error: e.message }))
+			scrapeJobsAaj(page, query, loc).catch(e => ({ source: 'jobsaaj', jobs: [], error: e.message })),
+			scrapeTimesJobs(page, query, loc).catch(e => ({ source: 'timesjobs', jobs: [], error: e.message })),
+			scrapeShine(page, query, loc).catch(e => ({ source: 'shine', jobs: [], error: e.message })),
+			scrapeZipRecruiter(page, query, loc).catch(e => ({ source: 'ziprecruiter', jobs: [], error: e.message })),
+			scrapeSimplyHired(page, query, loc).catch(e => ({ source: 'simplyhired', jobs: [], error: e.message })),
+			scrapeCareerBuilder(page, query, loc).catch(e => ({ source: 'careerbuilder', jobs: [], error: e.message })),
+			scrapeDice(page, query, loc).catch(e => ({ source: 'dice', jobs: [], error: e.message })),
+			scrapeAdzuna(page, query, loc).catch(e => ({ source: 'adzuna', jobs: [], error: e.message })),
+			scrapeJooble(page, query, loc).catch(e => ({ source: 'jooble', jobs: [], error: e.message })),
+			scrapeFreshersworld(page, query, loc).catch(e => ({ source: 'freshersworld', jobs: [], error: e.message }))
 		];
 		
 		const portalResults = await Promise.allSettled(scrapers);
@@ -489,10 +832,11 @@ module.exports = async (req, res) => {
 	const location = (req.query && req.query.location) ? String(req.query.location).trim() : 'remote';
 	const force = (req.query && req.query.force) === '1' || (req.query && req.query.force) === 'true';
 	
-	// If not forcing refresh, try to return cached data first
-	if (!force && hasKv()) {
-		try {
-			const cached = await kv.get(CACHE_KEY);
+		// If not forcing refresh, try to return cached data first
+		if (!force && hasKv()) {
+			try {
+				const { kv } = require('@vercel/kv');
+				const cached = await kv.get(CACHE_KEY);
 			if (cached && cached.jobs && Array.isArray(cached.jobs) && cached.jobs.length > 0) {
 				// Check if cache is still valid (within TTL)
 				const cachedAge = cached.scrapedAt ? (Date.now() - new Date(cached.scrapedAt).getTime()) / 1000 : Infinity;
