@@ -47,12 +47,27 @@ module.exports = async (req, res) => {
 		return res.status(500).json({ ok: false, error: 'Cannot determine base URL' });
 	}
 	
+	const q = (req.query && req.query.q) ? String(req.query.q).trim() : 'data analyst';
+	
 	try {
-		// Fetch from multi-scraper
-		const multiRes = await fetch(baseUrl + '/api/headless-scrape-multi?site=all');
+		// Fetch from mainstream boards: multi (Hirist, Naukri) + optional Indeed
+		const multiRes = await fetch(baseUrl + '/api/headless-scrape-multi?site=all&q=' + encodeURIComponent(q));
 		const multi = await multiRes.json();
 		
-		if (!multi || !multi.ok || !Array.isArray(multi.jobs)) {
+		let allJobs = Array.isArray(multi.jobs) ? multi.jobs : [];
+		const sources = Array.isArray(multi.sources) ? [...multi.sources] : [];
+		
+		// Optionally add Indeed (mainstream global board)
+		try {
+			const indeedRes = await fetch(baseUrl + '/api/headless-scrape-indeed?q=' + encodeURIComponent(q) + '&l=remote');
+			const indeed = await indeedRes.json();
+			if (indeed && indeed.ok && Array.isArray(indeed.jobs) && indeed.jobs.length > 0) {
+				indeed.jobs.forEach((j) => allJobs.push({ ...j, source: 'indeed_headless' }));
+				if (!sources.includes('indeed_headless')) sources.push('indeed_headless');
+			}
+		} catch (e) { /* Indeed optional; may block */ }
+		
+		if (allJobs.length === 0 && (!multi || !multi.ok)) {
 			return res.status(200).json({
 				ok: false,
 				error: 'Multi-scraper failed',
@@ -62,16 +77,16 @@ module.exports = async (req, res) => {
 		
 		// Save to KV with TTL
 		await kv.setex(CACHE_KEY, CACHE_TTL, {
-			jobs: multi.jobs,
-			sources: multi.sources || [],
+			jobs: allJobs,
+			sources,
 			scrapedAt: new Date().toISOString(),
-			count: multi.count || multi.jobs.length
+			count: allJobs.length
 		});
 		
 		return res.status(200).json({
 			ok: true,
-			count: multi.jobs.length,
-			sources: multi.sources,
+			count: allJobs.length,
+			sources,
 			cached: true,
 			cacheKey: CACHE_KEY,
 			ttl: CACHE_TTL

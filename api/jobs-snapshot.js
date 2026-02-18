@@ -20,7 +20,7 @@ const RSS_TIMEOUT_MS = 15_000;
 const USER_AGENT = 'Mozilla/5.0 (compatible; JobAggregator/1.0; +https://github.com)';
 
 // Role priority (Remote primary, India secondary)
-// Tier 1: analyst/BI/analytics roles (as requested)
+// Tier 1: analyst/BI/analytics roles (PRIMARY - 2-3 YOE level)
 const ROLE_TIER_1 = [
 	'data analyst',
 	'senior data analyst',
@@ -32,16 +32,27 @@ const ROLE_TIER_1 = [
 	'business intelligence developer',
 	'analytics engineer',
 	'bi analyst',
-	'analytics analyst'
+	'analytics analyst',
+	'financial analyst',
+	'marketing analyst',
+	'operations analyst'
 ];
-// Tier 2: junior/associate DS then ML/DE
+// Tier 2: junior/associate DS then ML (SECONDARY - still relevant)
 const ROLE_TIER_2 = [
 	'junior data scientist',
 	'associate data scientist',
 	'data scientist',
 	'ml engineer',
-	'machine learning engineer',
-	'data engineer'
+	'machine learning engineer'
+];
+// Tier 3: Data Engineering (LOW PRIORITY - filter out or deprioritize)
+const ROLE_TIER_3_EXCLUDE = [
+	'data engineer',
+	'senior data engineer',
+	'big data engineer',
+	'cloud data engineer',
+	'etl engineer',
+	'data infrastructure engineer'
 ];
 
 function clamp(n, min, max) {
@@ -243,8 +254,23 @@ function locationRank(location) {
 	return 0;
 }
 
-function roleTierRank(title) {
+function roleTierRank(title, description) {
 	const t = String(title || '').toLowerCase();
+	const desc = String(description || '').toLowerCase();
+	const fullText = t + ' ' + desc;
+	
+	// Check for exclusion terms (Data Engineering) - penalize heavily
+	const excludeHit = includesAnyPhrase(fullText, ROLE_TIER_3_EXCLUDE);
+	if (excludeHit) {
+		// Only include if ALSO mentions analyst/BI (hybrid roles)
+		const hasAnalyst = /(analyst|analytics|bi|business intelligence)/.test(fullText);
+		if (!hasAnalyst) {
+			return { tier: 'excluded', score: -100, hit: excludeHit }; // Negative score = filter out
+		}
+		// Hybrid role - keep but lower priority
+		return { tier: 'tier3', score: 30, hit: excludeHit };
+	}
+	
 	const hit1 = includesAnyPhrase(t, ROLE_TIER_1);
 	if (hit1) return { tier: 'tier1', score: 200, hit: hit1 };
 	const hit2 = includesAnyPhrase(t, ROLE_TIER_2);
@@ -252,6 +278,59 @@ function roleTierRank(title) {
 	// Generic analyst-ish hints
 	if (/(^|\b)(analyst|analytics|bi|business intelligence)(\b|$)/.test(t)) return { tier: 'tier3', score: 60, hit: 'analytics' };
 	return { tier: 'other', score: 0, hit: '' };
+}
+
+// Experience level filter (2-3 YOE focus)
+function experienceLevelMatch(title, description) {
+	const fullText = (String(title || '') + ' ' + String(description || '')).toLowerCase();
+	
+	// Look for experience requirements
+	const expPatterns = [
+		/\b(\d+)[\s-]+(?:to|-|–)[\s-]+(\d+)\s*(?:years?|yrs?|y\.o\.e\.)/i,  // "2-3 years"
+		/\b(\d+)[\s-]+(?:to|-|–)[\s-]+(\d+)\s*(?:years?|yrs?)\s*(?:of|of\s+experience)/i,
+		/\b(\d+)\s*(?:years?|yrs?|y\.o\.e\.)\s*(?:to|-|–)\s*(\d+)/i,
+		/\b(\d+)\s*(?:years?|yrs?)\s*(?:to|-|–)\s*(\d+)/i
+	];
+	
+	for (const pattern of expPatterns) {
+		const match = fullText.match(pattern);
+		if (match) {
+			const min = parseInt(match[1], 10);
+			const max = parseInt(match[2], 10);
+			if (!isNaN(min) && !isNaN(max)) {
+				// Check if range overlaps with 2-3 years
+				if ((min <= 3 && max >= 2) || (min === 2 && max === 3) || (min <= 2 && max >= 3)) {
+					return { match: true, score: 50, range: `${min}-${max}` }; // Bonus for matching range
+				}
+				// Also accept 1-4, 1-5 (includes 2-3)
+				if (min <= 2 && max >= 3) {
+					return { match: true, score: 30, range: `${min}-${max}` };
+				}
+			}
+		}
+	}
+	
+	// Check for single number patterns
+	const singlePatterns = [
+		/\b(2|3)\s*(?:years?|yrs?|y\.o\.e\.)\s*(?:of|of\s+)?experience/i,
+		/\b(2|3)\s*(?:years?|yrs?)\s*(?:minimum|min|required)/i
+	];
+	for (const pattern of singlePatterns) {
+		if (pattern.test(fullText)) {
+			return { match: true, score: 40 };
+		}
+	}
+	
+	// Check for "mid-level", "mid level", "2+", "3+"
+	if (/\b(mid[- ]?level|mid[- ]?senior)\b/i.test(fullText)) {
+		return { match: true, score: 25 };
+	}
+	if (/\b(2\+|3\+|2-3|3-5)\s*(?:years?|yrs?)/i.test(fullText)) {
+		return { match: true, score: 35 };
+	}
+	
+	// No explicit experience requirement = neutral (don't filter out)
+	return { match: true, score: 0 };
 }
 
 module.exports = async (req, res) => {
@@ -270,11 +349,12 @@ module.exports = async (req, res) => {
 	const host = req.headers['x-forwarded-host'] || req.headers.host;
 	const baseUrl = (host && (proto + '://' + host)) || '';
 
-	// Broader keywords to keep enough volume; ranking will prioritize the roles.
+	// Focused keywords - prioritize analyst/BI, exclude pure data engineering
 	const keywords = [
 		'data analyst', 'analyst', 'business analyst', 'product analyst', 'decision scientist',
 		'bi', 'business intelligence', 'analytics', 'analytics engineer',
-		'data scientist', 'machine learning', 'ml engineer', 'data engineer',
+		'data scientist', 'machine learning', 'ml engineer',
+		// Note: 'data engineer' removed from keywords - will be filtered out unless hybrid role
 		'data', 'remote'
 	];
 	const now = Date.now();
@@ -304,7 +384,9 @@ module.exports = async (req, res) => {
 		if (!it || typeof it !== 'object' || !it.position || !it.url) continue;
 			const full = (it.position + ' ' + (it.description || '') + ' ' + (Array.isArray(it.tags) ? it.tags.join(' ') : ''));
 			if (!containsAny(full, keywords)) continue;
-			const role = roleTierRank(it.position || '');
+			const role = roleTierRank(it.position || '', it.description || '');
+			if (role.score < 0) continue; // Filter out excluded roles (Data Engineering)
+			const expMatch = experienceLevelMatch(it.position || '', it.description || '');
 			const locScore = locationRank(it.location || 'Remote');
 			jobs.push(normalizeJob({
 				id: 'remoteok_' + it.id,
@@ -316,7 +398,7 @@ module.exports = async (req, res) => {
 				source: 'remoteok',
 				date: it.date || nowIso(),
 				tags: it.tags || [],
-				_rank: role.score + locScore,
+				_rank: role.score + locScore + expMatch.score,
 				_roleTier: role.tier
 			}));
 	}
@@ -330,7 +412,9 @@ module.exports = async (req, res) => {
 			if (!it || !it.title || !it.url) continue;
 			const full = (it.title + ' ' + (it.description_plain || it.description || '') + ' ' + (Array.isArray(it.tags) ? it.tags.join(' ') : ''));
 			if (!containsAny(full, keywords)) continue;
-			const role = roleTierRank(it.title || '');
+			const role = roleTierRank(it.title || '', it.description_plain || it.description || '');
+			if (role.score < 0) continue; // Filter out excluded roles
+			const expMatch = experienceLevelMatch(it.title || '', it.description_plain || it.description || '');
 			const locScore = locationRank(it.candidate_required_location || it.location || 'Remote');
 			jobs.push(normalizeJob({
 				id: 'remotive_' + (it.id || Math.random()).toString().replace(/[^a-zA-Z0-9]/g, '_'),
@@ -342,7 +426,7 @@ module.exports = async (req, res) => {
 				source: 'remotive',
 				date: it.publication_date || it.created_at || nowIso(),
 				tags: (it.tags || []).concat(it.category ? [it.category] : []),
-				_rank: role.score + locScore,
+				_rank: role.score + locScore + expMatch.score,
 				_roleTier: role.tier
 			}));
 		}
@@ -379,7 +463,9 @@ module.exports = async (req, res) => {
 			if (!it || !it.title || !it.link) continue;
 			const full = (it.title + ' ' + (it.description || '') + ' ' + (it.content || ''));
 			if (!containsAny(full, keywords)) continue;
-			const role = roleTierRank(it.title || '');
+			const role = roleTierRank(it.title || '', it.description || it.content || '');
+			if (role.score < 0) continue; // Filter out excluded roles
+			const expMatch = experienceLevelMatch(it.title || '', it.description || it.content || '');
 			const locScore = locationRank('Remote');
 			jobs.push(normalizeJob({
 				id: src + '_rss_' + String(it.link || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
@@ -391,7 +477,7 @@ module.exports = async (req, res) => {
 				source: src,
 				date: it.pubDate || nowIso(),
 				tags: ['rss'],
-				_rank: role.score + locScore,
+				_rank: role.score + locScore + expMatch.score,
 				_roleTier: role.tier
 			}));
 		}
@@ -406,7 +492,9 @@ module.exports = async (req, res) => {
 			if (!it || !it.title || !it.url) return;
 			const full = (it.title + ' ' + (it.description || ''));
 			if (!containsAny(full, keywords)) return;
-			const role = roleTierRank(it.title || '');
+			const role = roleTierRank(it.title || '', it.description || '');
+			if (role.score < 0) return; // Filter out excluded roles
+			const expMatch = experienceLevelMatch(it.title || '', it.description || '');
 			const locScore = locationRank(it.location || 'Remote');
 			jobs.push(normalizeJob({
 				id: 'workingnomads_' + String(it.id || it.url).replace(/[^a-zA-Z0-9]/g, '_'),
@@ -418,7 +506,7 @@ module.exports = async (req, res) => {
 				source: 'workingnomads',
 				date: it.date || nowIso(),
 				tags: ['api'],
-				_rank: role.score + locScore,
+				_rank: role.score + locScore + expMatch.score,
 				_roleTier: role.tier
 			}));
 		});
@@ -435,7 +523,9 @@ module.exports = async (req, res) => {
 					if (!it || !it.title || !it.url) return;
 					const full = (it.title + ' ' + (it.description || ''));
 					if (!containsAny(full, keywords)) return;
-					const role = roleTierRank(it.title || '');
+					const role = roleTierRank(it.title || '', it.description || '');
+					if (role.score < 0) return; // Filter out excluded roles
+					const expMatch = experienceLevelMatch(it.title || '', it.description || '');
 					jobs.push(normalizeJob({
 						id: 'weworkremotely_headless_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
 						title: it.title,
@@ -446,23 +536,25 @@ module.exports = async (req, res) => {
 						source: 'weworkremotely_headless',
 						date: nowIso(),
 						tags: ['headless'],
-						_rank: role.score + 120,
+						_rank: role.score + 120 + expMatch.score,
 						_roleTier: role.tier
 					}));
 				});
 			}
 		} catch (e) { /* headless optional */ }
 		
-		// 6) Multi-site headless scraper (Hirist, Naukri, etc.) — slow but gets India-focused jobs
+		// 6) Multi-site headless scraper (Hirist, Naukri — mainstream India boards)
 		try {
-			const multiPromise = fetchJson(baseUrl + '/api/headless-scrape-multi?site=all', { timeout: 35_000 });
+			const multiPromise = fetchJson(baseUrl + '/api/headless-scrape-multi?site=all&q=' + encodeURIComponent(q), { timeout: 35_000 });
 			const multi = await Promise.race([multiPromise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 35_000))]);
 			if (multi && multi.ok && Array.isArray(multi.jobs)) {
 				multi.jobs.forEach((it) => {
 					if (!it || !it.title || !it.url) return;
-					const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || ''));
+					const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || '') + ' ' + (it.description || ''));
 					if (!containsAny(full, keywords)) return;
-					const role = roleTierRank(it.title || '');
+					const role = roleTierRank(it.title || '', it.description || '');
+					if (role.score < 0) return; // Filter out excluded roles
+					const expMatch = experienceLevelMatch(it.title || '', it.description || '');
 					const locScore = locationRank(it.location || 'India');
 					jobs.push(normalizeJob({
 						id: (it.source || 'headless') + '_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
@@ -474,21 +566,83 @@ module.exports = async (req, res) => {
 						source: it.source || 'headless_multi',
 						date: it.date || nowIso(),
 						tags: ['headless'],
-						_rank: role.score + locScore,
+						_rank: role.score + locScore + expMatch.score,
 						_roleTier: role.tier
 					}));
 				});
 			}
 		} catch (e) { /* multi-scraper optional */ }
+		
+		// 6b) Indeed headless (mainstream global board — no public API)
+		try {
+			const indeedPromise = fetchJson(baseUrl + '/api/headless-scrape-indeed?q=' + encodeURIComponent(q) + '&l=remote', { timeout: 20_000 });
+			const indeed = await Promise.race([indeedPromise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20_000))]);
+			if (indeed && indeed.ok && Array.isArray(indeed.jobs)) {
+				indeed.jobs.forEach((it) => {
+					if (!it || !it.title || !it.url) return;
+					const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || '') + ' ' + (it.description || ''));
+					if (!containsAny(full, keywords)) return;
+					const role = roleTierRank(it.title || '', it.description || '');
+					if (role.score < 0) return; // Filter out excluded roles
+					const expMatch = experienceLevelMatch(it.title || '', it.description || '');
+					const locScore = locationRank(it.location || 'Remote');
+					jobs.push(normalizeJob({
+						id: 'indeed_headless_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
+						title: it.title,
+						company: it.company || 'Unknown',
+						location: it.location || 'Remote',
+						url: it.url,
+						description: it.description || '',
+						source: 'indeed_headless',
+						date: nowIso(),
+						tags: ['headless'],
+						_rank: role.score + locScore + expMatch.score,
+						_roleTier: role.tier
+					}));
+				});
+			}
+		} catch (e) { /* Indeed may block/throttle; optional */ }
+		
+		// 6c) LinkedIn headless (mainstream global board — no public API, may block bots)
+		try {
+			const linkedinPromise = fetchJson(baseUrl + '/api/headless-scrape-linkedin?q=' + encodeURIComponent(q) + '&location=remote&experience=2,3', { timeout: 25_000 });
+			const linkedin = await Promise.race([linkedinPromise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 25_000))]);
+			if (linkedin && linkedin.ok && Array.isArray(linkedin.jobs)) {
+				linkedin.jobs.forEach((it) => {
+					if (!it || !it.title || !it.url) return;
+					const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || '') + ' ' + (it.description || ''));
+					if (!containsAny(full, keywords)) return;
+					const role = roleTierRank(it.title || '', it.description || '');
+					if (role.score < 0) return; // Filter out excluded roles
+					const expMatch = experienceLevelMatch(it.title || '', it.description || '');
+					const locScore = locationRank(it.location || 'Remote');
+					jobs.push(normalizeJob({
+						id: 'linkedin_headless_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
+						title: it.title,
+						company: it.company || 'Unknown',
+						location: it.location || 'Remote',
+						url: it.url,
+						description: it.description || '',
+						source: 'linkedin_headless',
+						date: it.date || nowIso(),
+						tags: ['headless'],
+						_rank: role.score + locScore + expMatch.score,
+						_roleTier: role.tier
+					}));
+				});
+			}
+		} catch (e) { /* LinkedIn blocks/throttles aggressively; optional */ }
 	}
 	
 	// 7) Add cached headless jobs from KV (if available) — faster than live scraping
 	if (cachedHeadlessJobs.length > 0) {
 		cachedHeadlessJobs.forEach((it) => {
 			if (!it || !it.title || !it.url) return;
-			const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || ''));
+			const full = (it.title + ' ' + (it.company || '') + ' ' + (it.location || '') + ' ' + (it.description || ''));
 			if (!containsAny(full, keywords)) return;
-			const role = roleTierRank(it.title || '');
+			const role = roleTierRank(it.title || '', it.description || '');
+			if (role.score < 0) return; // Filter out excluded roles
+			const expMatch = experienceLevelMatch(it.title || '', it.description || '');
 			const locScore = locationRank(it.location || 'India');
 			jobs.push(normalizeJob({
 				id: (it.source || 'cached') + '_' + String(it.url || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
@@ -500,11 +654,17 @@ module.exports = async (req, res) => {
 				source: it.source || 'cached_headless',
 				date: it.date || nowIso(),
 				tags: ['cached'],
-				_rank: role.score + locScore,
+				_rank: role.score + locScore + expMatch.score,
 				_roleTier: role.tier
 			}));
 		});
 	}
+
+	// Filter out excluded roles (Data Engineering) - jobs with negative scores already filtered, but double-check
+	jobs = jobs.filter((j) => {
+		if (j._rank < 0) return false; // Excluded roles
+		return true;
+	});
 
 	// Freshness filter (last N days)
 	jobs = jobs.filter((j) => {

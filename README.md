@@ -123,7 +123,22 @@ The app can fetch poster images from [CineMaterial](https://www.cinematerial.com
 3. Call `/api/jobs-scraper-background` periodically (cron, manual, or Vercel Cron) to refresh cached jobs.
 4. The jobs-snapshot API will automatically use cached jobs from KV (faster) + live sources.
 
-**New sources added:** Indeed RSS, Wellfound (multiple feeds), Hirist (headless), Naukri (headless). Total sources: **10+** (RemoteOK, Remotive, WeWorkRemotely, Jobscollider, Wellfound, Indeed, WorkingNomads, Hirist, Naukri, plus cached headless).
+**Mainstream job boards:** We use **APIs/RSS where available** and **headless browser** where boards don’t offer a public API:
+- **APIs/RSS (no headless):** RemoteOK, Remotive, WeWorkRemotely, Jobscollider, Wellfound, Indeed (RSS), Working Nomads.
+- **Headless (optional, set `ENABLE_HEADLESS=1`):** **Indeed** (mainstream global), **LinkedIn** (mainstream global, may block bots), **Naukri** (mainstream India), **Hirist** (India tech), WeWorkRemotely (extra coverage). These are queried with your search term (`?q=`) and filtered for 2-3 YOE so results stay relevant.
+
+**Job filtering & ranking:** Jobs are filtered and ranked to prioritize:
+- **Role priority:** Analyst/BI roles (Tier 1) > Data Scientist/ML (Tier 2) > Others. **Data Engineering jobs are filtered out** unless they also mention analyst/BI roles (hybrid roles).
+- **Experience level:** Jobs matching 2-3 years of experience get bonus ranking points.
+- **Location:** Remote India > Remote Global > India on-site.
+
+**New sources:** Indeed RSS + Indeed headless, **LinkedIn headless**, Wellfound (multiple feeds), Hirist (headless), Naukri (headless). Total: **11+** sources; with headless enabled you get mainstream portals (Indeed, LinkedIn, Naukri, Hirist) in addition to API/RSS boards.
+
+**Verifying the jobs API:**  
+1. **Quick check:** `GET /api/jobs-snapshot?q=data%20analyst&days=7&limit=50`  
+   You should get JSON with `ok: true`, `jobs` (array), `sources`, and `sourceCounts` (e.g. `remoteok: 20, remotive: 15`).  
+2. **Relevance:** Jobs are filtered by keywords (analyst, data scientist, BI, etc.) and ranked; check that `jobs[].title` and `jobs[].source` look correct.  
+3. **Headless:** If `ENABLE_HEADLESS=1`, `sourceCounts` may include `naukri`, `hirist`, `indeed_headless`, `weworkremotely_headless`. If not set, only API/RSS sources appear.
 
 ---
 
@@ -160,8 +175,10 @@ The app can fetch poster images from [CineMaterial](https://www.cinematerial.com
 | `/api/rss` | GET | RSS/Atom proxy (CORS + allowlist) | None |
 | `/api/workingnomads` | GET | Working Nomads jobs proxy | None |
 | `/api/headless-scrape-weworkremotely` | GET | WeWorkRemotely scraper (headless browser). Also used by jobs-snapshot when `ENABLE_HEADLESS=1`. | `ENABLE_HEADLESS=1` to enable |
-| `/api/headless-scrape-multi` | GET | Multi-site headless scraper (Hirist, Naukri). Use `?site=all` to scrape all sites. | `ENABLE_HEADLESS=1` to enable |
-| `/api/jobs-scraper-background` | GET | Background scraper that saves headless-scraped jobs to Vercel KV. Call periodically (cron/manual). | `ENABLE_HEADLESS=1`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` |
+| `/api/headless-scrape-multi` | GET | Multi-site headless scraper: **Hirist**, **Naukri** (mainstream India). `?site=all` or `?site=hirist` or `?site=naukri`. Optional `?q=data+analyst`. | `ENABLE_HEADLESS=1` to enable |
+| `/api/headless-scrape-indeed` | GET | **Indeed** headless scraper (mainstream global; no public API). `?q=data+analyst&l=remote`. | `ENABLE_HEADLESS=1` to enable; Indeed may throttle. |
+| `/api/headless-scrape-linkedin` | GET | **LinkedIn** headless scraper (mainstream global; no public API, actively blocks bots). `?q=data+analyst&location=remote&experience=2,3`. | `ENABLE_HEADLESS=1` to enable; LinkedIn blocks aggressively - use sparingly. |
+| `/api/jobs-scraper-background` | GET | Background scraper: runs multi + Indeed + LinkedIn, saves to Vercel KV. Optional `?q=data+analyst`. Call periodically (cron/manual). | `ENABLE_HEADLESS=1`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` |
 
 **Example calls:**
 
