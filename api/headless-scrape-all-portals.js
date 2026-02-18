@@ -1,7 +1,8 @@
 /**
  * Unified headless scraper for all major job portals.
  * Scrapes: LinkedIn, Naukri, Indeed, Monster, Foundit, Glassdoor, Hirist, JobsAaj,
- *         TimesJobs, Shine, ZipRecruiter, SimplyHired, CareerBuilder, Dice, Adzuna, Jooble, Freshersworld
+ *         TimesJobs, Shine, ZipRecruiter, SimplyHired, CareerBuilder, Dice, Adzuna, Jooble, Freshersworld,
+ *         RemoteOK, Remotive, WeWorkRemotely, WorkingNomads, Wellfound, Remote.co, Jobspresso, Himalayas, Authentic Jobs
  * 
  * Usage: /api/headless-scrape-all-portals?q=data+analyst&days=3&location=remote
  * 
@@ -68,6 +69,65 @@ function sortByLocation(jobs) {
 	});
 }
 
+function dedupeByUrl(jobs) {
+	const seen = new Set();
+	return jobs.filter((j) => {
+		const u = String(j && j.url ? j.url : '').trim();
+		if (!u) return false;
+		if (seen.has(u)) return false;
+		seen.add(u);
+		return true;
+	});
+}
+
+async function fetchText(url, timeoutMs) {
+	const ctrl = new AbortController();
+	const t = setTimeout(() => ctrl.abort(), timeoutMs || TIMEOUT_MS);
+	try {
+		const r = await fetch(url, {
+			signal: ctrl.signal,
+			headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+		});
+		if (!r.ok) return '';
+		return await r.text();
+	} catch (e) {
+		return '';
+	} finally {
+		clearTimeout(t);
+	}
+}
+
+async function fetchJson(url, timeoutMs) {
+	const ctrl = new AbortController();
+	const t = setTimeout(() => ctrl.abort(), timeoutMs || TIMEOUT_MS);
+	try {
+		const r = await fetch(url, {
+			signal: ctrl.signal,
+			headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' }
+		});
+		if (!r.ok) return null;
+		return await r.json();
+	} catch (e) {
+		return null;
+	} finally {
+		clearTimeout(t);
+	}
+}
+
+function stripHtml(s) {
+	return String(s || '')
+		.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+		.replace(/<style[\s\S]*?<\/style>/gi, ' ')
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+function extractFirst(haystack, re) {
+	const m = String(haystack || '').match(re);
+	return m ? (m[1] || '').trim() : '';
+}
+
 // Individual portal scrapers
 async function scrapeLinkedIn(page, q, location, experience) {
 	try {
@@ -112,6 +172,225 @@ async function scrapeLinkedIn(page, q, location, experience) {
 		return { source: 'linkedin', jobs, url };
 	} catch (e) {
 		return { source: 'linkedin', jobs: [], error: e.message };
+	}
+}
+
+// Remote hiring platforms (non-headless / lightweight where possible)
+async function fetchRemoteOk(q) {
+	const url = 'https://remoteok.com/api';
+	try {
+		const data = await fetchJson(url, 12_000);
+		const list = Array.isArray(data) ? data : (data && Array.isArray(data.jobs) ? data.jobs : []);
+		const query = String(q || '').toLowerCase();
+		const jobs = [];
+		for (const it of list) {
+			if (!it || !it.position || !it.url) continue;
+			const title = String(it.position).trim();
+			const full = (title + ' ' + stripHtml(it.description || '') + ' ' + (Array.isArray(it.tags) ? it.tags.join(' ') : '')).toLowerCase();
+			if (query && !full.includes(query) && !title.toLowerCase().includes(query)) continue;
+			jobs.push({
+				title,
+				company: it.company || 'Unknown',
+				location: it.location || 'Remote',
+				url: String(it.url).startsWith('http') ? it.url : ('https://remoteok.com' + it.url),
+				date: it.date || '',
+				source: 'remoteok'
+			});
+			if (jobs.length >= 60) break;
+		}
+		return { source: 'remoteok', jobs, url };
+	} catch (e) {
+		return { source: 'remoteok', jobs: [], error: e.message, url };
+	}
+}
+
+async function fetchRemotive(q) {
+	const url = 'https://remotive.com/api/remote-jobs?search=' + encodeURIComponent(q || 'data analyst');
+	try {
+		const data = await fetchJson(url, 12_000);
+		const list = data && (data.jobs || data['remote-jobs'] || data.results);
+		const jobs = [];
+		if (Array.isArray(list)) {
+			for (const it of list) {
+				if (!it || !it.title || !it.url) continue;
+				jobs.push({
+					title: it.title,
+					company: it.company_name || 'Unknown',
+					location: it.candidate_required_location || it.location || 'Remote',
+					url: it.url,
+					date: it.publication_date || it.created_at || '',
+					source: 'remotive'
+				});
+				if (jobs.length >= 60) break;
+			}
+		}
+		return { source: 'remotive', jobs, url };
+	} catch (e) {
+		return { source: 'remotive', jobs: [], error: e.message, url };
+	}
+}
+
+async function fetchWorkingNomads(baseUrl, q) {
+	const url = baseUrl ? (baseUrl.replace(/\/$/, '') + '/api/workingnomads?q=' + encodeURIComponent(q || 'data analyst') + '&count=80') : '';
+	try {
+		if (!url) return { source: 'workingnomads', jobs: [], error: 'missing_base_url' };
+		const data = await fetchJson(url, 15_000);
+		const list = data && data.ok && Array.isArray(data.jobs) ? data.jobs : [];
+		const jobs = list.slice(0, 80).map((it) => ({
+			title: it.title,
+			company: it.company || 'Unknown',
+			location: it.location || 'Remote',
+			url: it.url,
+			date: it.date || '',
+			source: 'workingnomads'
+		}));
+		return { source: 'workingnomads', jobs, url };
+	} catch (e) {
+		return { source: 'workingnomads', jobs: [], error: e.message, url };
+	}
+}
+
+async function fetchWeWorkRemotelyRss(q) {
+	const url = 'https://weworkremotely.com/remote-jobs.rss';
+	try {
+		const xml = await fetchText(url, 15_000);
+		if (!xml) return { source: 'weworkremotely', jobs: [], url };
+		const items = xml.match(/<item[^>]*>[\s\S]*?<\/item>/gi) || [];
+		const query = String(q || '').toLowerCase();
+		const jobs = [];
+		for (const block of items) {
+			const title = stripHtml(extractFirst(block, /<title[^>]*>([\s\S]*?)<\/title>/i));
+			const link = stripHtml(extractFirst(block, /<link[^>]*>([\s\S]*?)<\/link>/i));
+			const pubDate = stripHtml(extractFirst(block, /<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i));
+			const desc = stripHtml(extractFirst(block, /<description[^>]*>([\s\S]*?)<\/description>/i));
+			const full = (title + ' ' + desc).toLowerCase();
+			if (!title || !link) continue;
+			if (query && !full.includes(query) && !title.toLowerCase().includes(query)) continue;
+			jobs.push({ title, company: 'Unknown', location: 'Remote', url: link, date: pubDate, source: 'weworkremotely' });
+			if (jobs.length >= 60) break;
+		}
+		return { source: 'weworkremotely', jobs, url };
+	} catch (e) {
+		return { source: 'weworkremotely', jobs: [], error: e.message, url };
+	}
+}
+
+async function fetchWellfoundRss(q) {
+	const url = 'https://wellfound.com/jobs.rss?keywords=' + encodeURIComponent(q || 'data analyst') + '&remote=true';
+	try {
+		const xml = await fetchText(url, 15_000);
+		if (!xml) return { source: 'wellfound', jobs: [], url };
+		const items = xml.match(/<item[^>]*>[\s\S]*?<\/item>/gi) || [];
+		const jobs = [];
+		for (const block of items) {
+			const title = stripHtml(extractFirst(block, /<title[^>]*>([\s\S]*?)<\/title>/i));
+			const link = stripHtml(extractFirst(block, /<link[^>]*>([\s\S]*?)<\/link>/i));
+			const pubDate = stripHtml(extractFirst(block, /<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i));
+			const desc = stripHtml(extractFirst(block, /<description[^>]*>([\s\S]*?)<\/description>/i));
+			if (!title || !link) continue;
+			jobs.push({ title, company: 'Unknown', location: 'Remote', url: link, date: pubDate, description: desc, source: 'wellfound' });
+			if (jobs.length >= 60) break;
+		}
+		return { source: 'wellfound', jobs, url };
+	} catch (e) {
+		return { source: 'wellfound', jobs: [], error: e.message, url };
+	}
+}
+
+async function fetchRemoteCo(q) {
+	const url = 'https://remote.co/remote-jobs/analyst';
+	try {
+		const html = await fetchText(url, 15_000);
+		if (!html) return { source: 'remote_co', jobs: [], url };
+		const jobs = [];
+		const cards = html.split(/class=["']job_listing["']/i);
+		const query = String(q || '').toLowerCase();
+		for (const chunk of cards.slice(1)) {
+			const href = extractFirst(chunk, /href=["']([^"']+)["']/i);
+			const title = stripHtml(extractFirst(chunk, /class=["']position["'][^>]*>([\s\S]*?)<\/a>/i) || extractFirst(chunk, /<a[^>]+>([\s\S]*?)<\/a>/i));
+			const company = stripHtml(extractFirst(chunk, /class=["']company["'][^>]*>([\s\S]*?)<\/span>/i));
+			const location = stripHtml(extractFirst(chunk, /class=["']location["'][^>]*>([\s\S]*?)<\/span>/i));
+			if (!href || !title) continue;
+			const fullUrl = href.startsWith('http') ? href : ('https://remote.co' + href);
+			if (query && !title.toLowerCase().includes(query) && !title.toLowerCase().includes('analyst') && !query.includes('analyst')) continue;
+			jobs.push({ title, company: company || 'Unknown', location: location || 'Remote', url: fullUrl, date: '', source: 'remote_co' });
+			if (jobs.length >= 50) break;
+		}
+		return { source: 'remote_co', jobs, url };
+	} catch (e) {
+		return { source: 'remote_co', jobs: [], error: e.message, url };
+	}
+}
+
+async function fetchJobspresso(q) {
+	const url = 'https://jobspresso.co/jobs';
+	try {
+		const html = await fetchText(url, 15_000);
+		if (!html) return { source: 'jobspresso', jobs: [], url };
+		const jobs = [];
+		const query = String(q || '').toLowerCase();
+		// Jobspresso uses standard WP job archive links: /job/<slug>
+		const re = /<a[^>]+href=["'](https?:\/\/jobspresso\.co\/job\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+		let m;
+		while ((m = re.exec(html))) {
+			const link = m[1];
+			const title = stripHtml(m[2]);
+			if (!title || !link) continue;
+			if (query && !title.toLowerCase().includes(query) && !title.toLowerCase().includes('analyst') && !query.includes('analyst')) continue;
+			jobs.push({ title, company: 'Unknown', location: 'Remote', url: link, date: '', source: 'jobspresso' });
+			if (jobs.length >= 50) break;
+		}
+		return { source: 'jobspresso', jobs, url };
+	} catch (e) {
+		return { source: 'jobspresso', jobs: [], error: e.message, url };
+	}
+}
+
+async function fetchAuthenticJobs(q) {
+	const url = 'https://authenticjobs.com/?q=' + encodeURIComponent(q || 'data analyst');
+	try {
+		const html = await fetchText(url, 15_000);
+		if (!html) return { source: 'authenticjobs', jobs: [], url };
+		const jobs = [];
+		// Links look like /jobs/<id>/<slug>/
+		const re = /<a[^>]+href=["'](\/jobs\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+		let m;
+		while ((m = re.exec(html))) {
+			const href = m[1];
+			const title = stripHtml(m[2]);
+			if (!href || !title) continue;
+			if (title.length < 4) continue;
+			jobs.push({ title, company: 'Unknown', location: 'Remote', url: 'https://authenticjobs.com' + href, date: '', source: 'authenticjobs' });
+			if (jobs.length >= 50) break;
+		}
+		return { source: 'authenticjobs', jobs, url };
+	} catch (e) {
+		return { source: 'authenticjobs', jobs: [], error: e.message, url };
+	}
+}
+
+async function scrapeHimalayas(page, q) {
+	try {
+		const url = 'https://himalayas.app/jobs?search=' + encodeURIComponent(q || 'data analyst');
+		await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
+		await page.waitForSelector('a[href*=\"/jobs/\"]', { timeout: 12_000 }).catch(() => {});
+		const jobs = await page.evaluate(() => {
+			const out = [];
+			const links = Array.from(document.querySelectorAll('a[href*=\"/jobs/\"]'));
+			for (const a of links) {
+				const href = a.getAttribute('href') || '';
+				if (!href.startsWith('/jobs/')) continue;
+				const title = (a.textContent || '').trim();
+				if (!title || title.length < 4) continue;
+				const url = 'https://himalayas.app' + href;
+				out.push({ title, company: 'Unknown', location: 'Remote', url, date: '', source: 'himalayas' });
+				if (out.length >= 50) break;
+			}
+			return out;
+		});
+		return { source: 'himalayas', jobs: jobs || [], url };
+	} catch (e) {
+		return { source: 'himalayas', jobs: [], error: e.message };
 	}
 }
 
@@ -708,7 +987,7 @@ async function scrapeFreshersworld(page, q, location) {
 }
 
 // Main scraper function
-async function scrapeAllPortals(q, days, location) {
+async function scrapeAllPortals(q, days, location, baseUrl) {
 	const query = q || 'data analyst';
 	const maxDays = parseInt(days, 10) || 3;
 	const loc = location || 'remote';
@@ -723,37 +1002,68 @@ async function scrapeAllPortals(q, days, location) {
 			executablePath: await chromium.executablePath(),
 			headless: chromium.headless
 		});
-		
-		const page = await browser.newPage();
-		page.setDefaultNavigationTimeout(TIMEOUT_MS);
-		await page.setUserAgent(USER_AGENT);
-		
-		// Scrape all portals in parallel (with individual timeouts)
-		const scrapers = [
-			scrapeLinkedIn(page, query, loc, '2,3').catch(e => ({ source: 'linkedin', jobs: [], error: e.message })),
-			scrapeNaukri(page, query, loc).catch(e => ({ source: 'naukri', jobs: [], error: e.message })),
-			scrapeIndeed(page, query, loc).catch(e => ({ source: 'indeed', jobs: [], error: e.message })),
-			scrapeMonster(page, query, loc).catch(e => ({ source: 'monster', jobs: [], error: e.message })),
-			scrapeFoundit(page, query, loc).catch(e => ({ source: 'foundit', jobs: [], error: e.message })),
-			scrapeGlassdoor(page, query, loc).catch(e => ({ source: 'glassdoor', jobs: [], error: e.message })),
-			scrapeHirist(page, query).catch(e => ({ source: 'hirist', jobs: [], error: e.message })),
-			scrapeJobsAaj(page, query, loc).catch(e => ({ source: 'jobsaaj', jobs: [], error: e.message })),
-			scrapeTimesJobs(page, query, loc).catch(e => ({ source: 'timesjobs', jobs: [], error: e.message })),
-			scrapeShine(page, query, loc).catch(e => ({ source: 'shine', jobs: [], error: e.message })),
-			scrapeZipRecruiter(page, query, loc).catch(e => ({ source: 'ziprecruiter', jobs: [], error: e.message })),
-			scrapeSimplyHired(page, query, loc).catch(e => ({ source: 'simplyhired', jobs: [], error: e.message })),
-			scrapeCareerBuilder(page, query, loc).catch(e => ({ source: 'careerbuilder', jobs: [], error: e.message })),
-			scrapeDice(page, query, loc).catch(e => ({ source: 'dice', jobs: [], error: e.message })),
-			scrapeAdzuna(page, query, loc).catch(e => ({ source: 'adzuna', jobs: [], error: e.message })),
-			scrapeJooble(page, query, loc).catch(e => ({ source: 'jooble', jobs: [], error: e.message })),
-			scrapeFreshersworld(page, query, loc).catch(e => ({ source: 'freshersworld', jobs: [], error: e.message }))
-		];
-		
-		const portalResults = await Promise.allSettled(scrapers);
-		portalResults.forEach((result, idx) => {
-			if (result.status === 'fulfilled' && result.value) {
-				results.push(result.value);
+		const runWithPage = async (fn) => {
+			const page = await browser.newPage();
+			page.setDefaultNavigationTimeout(TIMEOUT_MS);
+			await page.setUserAgent(USER_AGENT);
+			try {
+				return await fn(page);
+			} finally {
+				try { await page.close(); } catch (e) {}
 			}
+		};
+
+		// Headless portals (need a browser page)
+		const headlessTasks = [
+			() => runWithPage((p) => scrapeLinkedIn(p, query, loc, '2,3')),
+			() => runWithPage((p) => scrapeNaukri(p, query, loc)),
+			() => runWithPage((p) => scrapeIndeed(p, query, loc)),
+			() => runWithPage((p) => scrapeMonster(p, query, loc)),
+			() => runWithPage((p) => scrapeFoundit(p, query, loc)),
+			() => runWithPage((p) => scrapeGlassdoor(p, query, loc)),
+			() => runWithPage((p) => scrapeHirist(p, query)),
+			() => runWithPage((p) => scrapeJobsAaj(p, query, loc)),
+			() => runWithPage((p) => scrapeTimesJobs(p, query, loc)),
+			() => runWithPage((p) => scrapeShine(p, query, loc)),
+			() => runWithPage((p) => scrapeZipRecruiter(p, query, loc)),
+			() => runWithPage((p) => scrapeSimplyHired(p, query, loc)),
+			() => runWithPage((p) => scrapeCareerBuilder(p, query, loc)),
+			() => runWithPage((p) => scrapeDice(p, query, loc)),
+			() => runWithPage((p) => scrapeAdzuna(p, query, loc)),
+			() => runWithPage((p) => scrapeJooble(p, query, loc)),
+			() => runWithPage((p) => scrapeFreshersworld(p, query, loc)),
+			() => runWithPage((p) => scrapeHimalayas(p, query))
+		];
+
+		const concurrency = 4; // avoid too many pages in serverless
+		const headlessResults = [];
+		let cursor = 0;
+		const workers = new Array(concurrency).fill(0).map(async () => {
+			while (cursor < headlessTasks.length) {
+				const i = cursor++;
+				try {
+					headlessResults[i] = await headlessTasks[i]();
+				} catch (e) {
+					headlessResults[i] = { source: 'unknown', jobs: [], error: e.message };
+				}
+			}
+		});
+		await Promise.all(workers);
+		headlessResults.forEach((r) => { if (r) results.push(r); });
+
+		// Non-headless remote hiring platforms (API/RSS/HTML fetch)
+		const nonHeadless = await Promise.allSettled([
+			fetchRemoteOk(query),
+			fetchRemotive(query),
+			fetchWeWorkRemotelyRss(query),
+			fetchWellfoundRss(query),
+			fetchRemoteCo(query),
+			fetchJobspresso(query),
+			fetchAuthenticJobs(query),
+			fetchWorkingNomads(baseUrl, query)
+		]);
+		nonHeadless.forEach((r) => {
+			if (r.status === 'fulfilled' && r.value) results.push(r.value);
 		});
 		
 	} catch (e) {
@@ -773,6 +1083,8 @@ async function scrapeAllPortals(q, days, location) {
 			});
 		}
 	});
+
+	allJobs = dedupeByUrl(allJobs);
 	
 	// Filter by date (last N days)
 	allJobs = filterByDate(allJobs, maxDays);
@@ -831,6 +1143,9 @@ module.exports = async (req, res) => {
 	const days = (req.query && req.query.days) ? parseInt(String(req.query.days), 10) : 3;
 	const location = (req.query && req.query.location) ? String(req.query.location).trim() : 'remote';
 	const force = (req.query && req.query.force) === '1' || (req.query && req.query.force) === 'true';
+	const proto = (req.headers && (req.headers['x-forwarded-proto'] || 'https')) || 'https';
+	const host = req.headers && (req.headers['x-forwarded-host'] || req.headers.host);
+	const baseUrl = host ? (proto + '://' + host) : '';
 	
 		// If not forcing refresh, try to return cached data first
 		if (!force && hasKv()) {
@@ -860,6 +1175,6 @@ module.exports = async (req, res) => {
 	}
 	
 	// Scrape fresh data
-	const result = await scrapeAllPortals(q, days, location);
+	const result = await scrapeAllPortals(q, days, location, baseUrl);
 	return res.status(200).json(result);
 };
