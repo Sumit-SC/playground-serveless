@@ -450,14 +450,25 @@ module.exports = async (req, res) => {
 	];
 
 	const rssResults = await Promise.allSettled(rssFeeds.map(async (f) => {
-		const items = await fetchRssDirect(f.url, 50);
-		return { source: f.source, items };
+		try {
+			const items = await fetchRssDirect(f.url, 50);
+			return { source: f.source, items, url: f.url };
+		} catch (e) {
+			return { source: f.source, items: [], error: e.message, url: f.url };
+		}
 	}));
 
+	const rssErrors = [];
 	rssResults.forEach((r) => {
-		if (!r || r.status !== 'fulfilled' || !r.value) return;
+		if (!r || r.status !== 'fulfilled' || !r.value) {
+			rssErrors.push({ source: 'unknown', error: r && r.reason ? r.reason.message : 'Failed' });
+			return;
+		}
 		const src = r.value.source;
 		const items = r.value.items || [];
+		if (r.value.error) {
+			rssErrors.push({ source: src, error: r.value.error, url: r.value.url });
+		}
 		for (let i = 0; i < items.length; i++) {
 			const it = items[i];
 			if (!it || !it.title || !it.link) continue;
@@ -699,6 +710,12 @@ module.exports = async (req, res) => {
 	const sourceCounts = {};
 	jobs.forEach((j) => { sourceCounts[j.source] = (sourceCounts[j.source] || 0) + 1; });
 
+	// Collect errors for debugging
+	const errors = [];
+	if (rssErrors && rssErrors.length > 0) {
+		errors.push(...rssErrors.map(e => ({ type: 'rss', source: e.source, error: e.error, url: e.url })));
+	}
+
 	return res.status(200).json({
 		ok: true,
 		query: q,
@@ -707,7 +724,8 @@ module.exports = async (req, res) => {
 		count: jobs.length,
 		sources,
 		sourceCounts,
-		jobs
+		jobs,
+		...(errors.length > 0 ? { _errors: errors } : {})
 	});
 };
 

@@ -15,6 +15,7 @@
     { "src": "api/jobs-cached.js", "use": "@vercel/node" },
     { "src": "api/jobs-refresh.js", "use": "@vercel/node" },
     { "src": "api/jobs-scraper-background.js", "use": "@vercel/node" },
+    { "src": "api/jobs-sources-debug.js", "use": "@vercel/node" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
   "routes": [
@@ -32,6 +33,7 @@
     { "src": "/api/jobs-cached", "dest": "/api/jobs-cached.js" },
     { "src": "/api/jobs-refresh", "dest": "/api/jobs-refresh.js" },
     { "src": "/api/jobs-scraper-background", "dest": "/api/jobs-scraper-background.js" },
+    { "src": "/api/jobs-sources-debug", "dest": "/api/jobs-sources-debug.js" },
     { "src": "/", "dest": "/index.html" }
   ]
 }
