@@ -135,6 +135,32 @@
 			Key is on the server (Vercel <code>OMDB_API_KEY</code>). If you set <code>API_SECRET</code>, use the “API key” field above.<br>
 			Test (open in new tab; add <code>X-API-Key</code> if API is protected): <a href="#" id="api-test-poster">Poster by title</a> · <a href="#" id="api-test-search">Search</a> · <a href="#" id="api-test-id">By ID</a>
 		</div>
+
+		<!-- Jobs API test UI (uses the same Vercel deployment) -->
+		<div id="jobs-panel" style="margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid #334155;">
+			<h1 style="font-size:1.1rem; margin-bottom:0.75rem;">Jobs API – test UI</h1>
+			<p class="hint" style="margin-top:0; margin-bottom:0.75rem;">
+				This panel calls <code>/api/jobs-*</code> on this Vercel app and shows aggregated data/analytics/BI roles.
+			</p>
+			<div class="search-row" style="flex-wrap:wrap; gap:0.5rem 0.75rem;">
+				<input type="text" id="jobs-q" placeholder="Query (e.g. data analyst)" style="max-width:260px;">
+				<input type="text" id="jobs-days" placeholder="Days (e.g. 3)" style="max-width:90px;">
+				<input type="text" id="jobs-limit" placeholder="Limit (e.g. 80)" style="max-width:90px;">
+				<input type="text" id="jobs-location" placeholder="Location (e.g. remote)" style="max-width:140px;">
+			</div>
+			<div class="search-row" style="flex-wrap:wrap; gap:0.5rem 0.75rem; margin-top:0.25rem;">
+				<button type="button" id="jobs-btn-snapshot">Load snapshot (RSS / APIs)</button>
+				<button type="button" id="jobs-btn-cached" class="secondary">Load cached (KV)</button>
+				<button type="button" id="jobs-btn-refresh" class="secondary">Refresh all portals (headless)</button>
+				<button type="button" id="jobs-btn-sources" class="secondary">Sources debug</button>
+			</div>
+			<div id="jobs-status" class="hint" style="margin-top:0.5rem;"></div>
+			<div id="jobs-stats" class="api-info" style="margin-top:0.75rem; display:none;">
+				<div id="jobs-summary"></div>
+				<div id="jobs-sources"></div>
+			</div>
+			<div id="jobs-results" class="results-grid" style="margin-top:1rem;"></div>
+		</div>
 	</div>
 
 	<script>
@@ -461,6 +487,186 @@
 			if (id && /^tt\d+$/.test(id)) showDetail(id);
 		}
 
+		// --- Jobs API test helpers ---
+
+		function setJobsStatus(msg) {
+			var el = document.getElementById('jobs-status');
+			if (el) el.textContent = msg || '';
+		}
+
+		function readJobsParams() {
+			var q = (document.getElementById('jobs-q') && document.getElementById('jobs-q').value.trim()) || 'data analyst';
+			var days = (document.getElementById('jobs-days') && document.getElementById('jobs-days').value.trim()) || '3';
+			var limit = (document.getElementById('jobs-limit') && document.getElementById('jobs-limit').value.trim()) || '80';
+			var location = (document.getElementById('jobs-location') && document.getElementById('jobs-location').value.trim()) || 'remote';
+			return { q: q, days: days, limit: limit, location: location };
+		}
+
+		function renderJobsResults(data) {
+			var jobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
+			var sources = (data && Array.isArray(data.sources)) ? data.sources : [];
+			var sourceCounts = (data && data.sourceCounts) ? data.sourceCounts : {};
+
+			var statsBox = document.getElementById('jobs-stats');
+			var summaryEl = document.getElementById('jobs-summary');
+			var sourcesEl = document.getElementById('jobs-sources');
+			var listEl = document.getElementById('jobs-results');
+
+			if (!listEl) return;
+
+			if (!jobs.length) {
+				listEl.innerHTML = '';
+				if (statsBox) statsBox.style.display = 'none';
+				return;
+			}
+
+			// Stats
+			if (statsBox && summaryEl && sourcesEl) {
+				statsBox.style.display = 'block';
+				var uniqueSources = sources.length ? sources : Object.keys(sourceCounts || {});
+				summaryEl.innerHTML = '<p><strong>Total jobs:</strong> ' + jobs.length +
+					(uniqueSources.length ? ' &middot; <strong>Sources:</strong> ' + uniqueSources.length : '') +
+					'</p>';
+
+				if (Object.keys(sourceCounts || {}).length) {
+					var chips = Object.keys(sourceCounts).sort(function (a, b) { return sourceCounts[b] - sourceCounts[a]; })
+						.map(function (s) {
+							return '<span style="display:inline-block;margin:0 0.25rem 0.25rem 0;padding:0.15rem 0.45rem;border-radius:999px;background:#0f172a;border:1px solid #334155;font-size:0.75rem;">' +
+								esc(s) + ': ' + sourceCounts[s] + '</span>';
+						});
+					sourcesEl.innerHTML = '<p class="hint" style="margin-bottom:0.25rem;">Per‑source counts:</p>' + chips.join('');
+				} else {
+					sourcesEl.innerHTML = '';
+				}
+			}
+
+			// Results grid
+			var html = '';
+			jobs.forEach(function (j) {
+				var title = esc(j.title || 'Untitled');
+				var company = esc(j.company || 'Unknown');
+				var location = esc(j.location || '');
+				var src = esc(j.source || '');
+				var meta = [];
+				if (company) meta.push(company);
+				if (location) meta.push(location);
+				if (j.postedAgo) meta.push(esc(j.postedAgo));
+				if (j.dateFormatted) meta.push(esc(j.dateFormatted));
+				var metaStr = meta.join(' · ');
+				html += '<div class="result-card" onclick="window.open(' + JSON.stringify(j.url || '#') + ', \'_blank\')">' +
+					'<div class="meta">' +
+					'<div class="title">' + title + '</div>' +
+					(metaStr ? '<div class="year">' + metaStr + '</div>' : '') +
+					(src ? '<div class="year">Source: ' + src + '</div>' : '') +
+					'</div>' +
+					'</div>';
+			});
+			listEl.innerHTML = html;
+		}
+
+		function callJobsSnapshot() {
+			var p = readJobsParams();
+			setJobsStatus('Loading snapshot…');
+			fetch(base + '/api/jobs-snapshot?q=' + encodeURIComponent(p.q) +
+				'&days=' + encodeURIComponent(p.days) +
+				'&limit=' + encodeURIComponent(p.limit))
+				.then(function (r) { return r.ok ? r.json() : null; })
+				.then(function (data) {
+					if (!data || !data.ok) {
+						setJobsStatus('Snapshot API error. See console for details.');
+						console.error('jobs-snapshot error', data);
+						return;
+					}
+					setJobsStatus('Loaded ' + (data.count || (data.jobs ? data.jobs.length : 0)) + ' jobs from snapshot.');
+					renderJobsResults(data);
+				})
+				.catch(function (err) {
+					console.error('jobs-snapshot network error', err);
+					setJobsStatus('Network error calling jobs-snapshot.');
+				});
+		}
+
+		function callJobsCached() {
+			var p = readJobsParams();
+			setJobsStatus('Loading cached jobs…');
+			fetch(base + '/api/jobs-cached?q=' + encodeURIComponent(p.q))
+				.then(function (r) { return r.ok ? r.json() : null; })
+				.then(function (data) {
+					if (!data || !data.ok) {
+						setJobsStatus('Cached API not available (may be 404 until latest deploy). Falling back to snapshot.',);
+						console.warn('jobs-cached error', data);
+						callJobsSnapshot();
+						return;
+					}
+					setJobsStatus('Loaded ' + (data.count || (data.jobs ? data.jobs.length : 0)) + ' cached jobs.');
+					renderJobsResults(data);
+				})
+				.catch(function (err) {
+					console.error('jobs-cached network error', err);
+					setJobsStatus('Cached API unreachable. Falling back to snapshot.');
+					callJobsSnapshot();
+				});
+		}
+
+		function callJobsRefresh() {
+			var p = readJobsParams();
+			setJobsStatus('Triggering full scrape across all portals (this can take 30–60 seconds)…');
+			fetch(base + '/api/jobs-refresh?q=' + encodeURIComponent(p.q) +
+				'&days=' + encodeURIComponent(p.days) +
+				'&location=' + encodeURIComponent(p.location))
+				.then(function (r) { return r.ok ? r.json() : null; })
+				.then(function (data) {
+					if (!data || !data.ok) {
+						setJobsStatus('jobs-refresh failed or unavailable. See console.');
+						console.error('jobs-refresh error', data);
+						return;
+					}
+					setJobsStatus('Scrape finished. Loading cached jobs…');
+					callJobsCached();
+				})
+				.catch(function (err) {
+					console.error('jobs-refresh network error', err);
+					setJobsStatus('Network error calling jobs-refresh.');
+				});
+		}
+
+		function callJobsSourcesDebug() {
+			setJobsStatus('Checking individual sources…');
+			fetch(base + '/api/jobs-sources-debug')
+				.then(function (r) { return r.ok ? r.json() : null; })
+				.then(function (data) {
+					if (!data || !data.ok) {
+						setJobsStatus('jobs-sources-debug failed or not deployed yet.');
+						console.error('jobs-sources-debug error', data);
+						return;
+					}
+					var statsBox = document.getElementById('jobs-stats');
+					var summaryEl = document.getElementById('jobs-summary');
+					var sourcesEl = document.getElementById('jobs-sources');
+					if (statsBox && summaryEl && sourcesEl) {
+						statsBox.style.display = 'block';
+						summaryEl.innerHTML = '<p><strong>Sources debug:</strong> ' + Object.keys(data.sources || {}).length + ' sources checked.</p>';
+						var html = '';
+						Object.keys(data.sources || {}).forEach(function (name) {
+							var s = data.sources[name];
+							var ok = s && s.ok;
+							var sample = (s && s.sampleTitle) ? esc(s.sampleTitle) : '';
+							html += '<div class="hint" style="margin-bottom:0.25rem;">' +
+								'<strong style="color:' + (ok ? '#22c55e' : '#f97316') + ';">' + esc(name) + '</strong>: ' +
+								(ok ? 'OK' : 'ERROR') +
+								(sample ? ' — ' + sample : '') +
+								'</div>';
+						});
+						sourcesEl.innerHTML = html;
+					}
+					setJobsStatus('Sources debug loaded. See list below.');
+				})
+				.catch(function (err) {
+					console.error('jobs-sources-debug network error', err);
+					setJobsStatus('Network error calling jobs-sources-debug.');
+				});
+		}
+
 		checkUnlock();
 		if (document.getElementById('app').classList.contains('unlocked')) {
 			var savedKey = sessionStorage.getItem(API_KEY_STORAGE);
@@ -483,6 +689,20 @@
 				}
 			}, 0);
 		});
+
+		// Wire up Jobs panel buttons (if present)
+		if (document.getElementById('jobs-btn-snapshot')) {
+			document.getElementById('jobs-btn-snapshot').addEventListener('click', callJobsSnapshot);
+		}
+		if (document.getElementById('jobs-btn-cached')) {
+			document.getElementById('jobs-btn-cached').addEventListener('click', callJobsCached);
+		}
+		if (document.getElementById('jobs-btn-refresh')) {
+			document.getElementById('jobs-btn-refresh').addEventListener('click', callJobsRefresh);
+		}
+		if (document.getElementById('jobs-btn-sources')) {
+			document.getElementById('jobs-btn-sources').addEventListener('click', callJobsSourcesDebug);
+		}
 	</script>
 </body>
 </html>
