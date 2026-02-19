@@ -1,3 +1,9 @@
+# Playground serverless (Vercel)
+
+**What this project is:** The **working** Vercel serverless app: **job APIs** (`/api/jobs-snapshot`, `/api/jobs-cached`, `/api/jobs-refresh`, headless scrapers) plus **OMDb/cinematerial/auth** proxies. Deploy this folder as one Vercel project. The analytics-lab frontend uses this app’s URL for jobs. See [JOBS-SCRAPER.md](../JOBS-SCRAPER.md) in the base directory for how it fits with the Python scraper.
+
+---
+
 # OMDb API proxy (separate backend)
 
 Minimal serverless backend that calls OMDb with your API key and returns only safe data. Use this **repo by itself** on Vercel so your main site repo stays front-end only (e.g. GitHub Pages).

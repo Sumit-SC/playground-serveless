@@ -54,12 +54,18 @@ module.exports = async (req, res) => {
 				return title.includes(q) || company.includes(q);
 			});
 		}
-		
+		const sources = Array.from(new Set(jobs.map(j => j.source).filter(Boolean))).sort();
+		const sourceCounts = {};
+		jobs.forEach(j => {
+			const src = j.source || 'unknown';
+			sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+		});
 		return res.status(200).json({
 			ok: true,
 			count: jobs.length,
 			jobs,
-			sources: cached.sources || [],
+			sources,
+			sourceCounts,
 			cached: true,
 			scrapedAt: cached.scrapedAt,
 			query: cached.query || '',

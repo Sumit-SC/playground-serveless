@@ -71,38 +71,46 @@
 			<label for="q">Query</label>
 			<input id="q" type="text" placeholder="e.g. data analyst" value="data analyst">
 		</div>
-		<div class="field" style="max-width:120px;">
-			<label for="days">Age (days)</label>
+		<div class="field" style="max-width:140px;">
+			<label for="days">Posted (date)</label>
 			<select id="days">
 				<option value="1">Last 1 day</option>
 				<option value="2" selected>Last 2 days</option>
 				<option value="3">Last 3 days</option>
 				<option value="7">Last 7 days</option>
+				<option value="14">Last 14 days</option>
 			</select>
 		</div>
-		<div class="field" style="max-width:120px;">
+		<div class="field" style="max-width:100px;">
 			<label for="limit">Limit</label>
 			<select id="limit">
 				<option value="25">25</option>
 				<option value="50" selected>50</option>
 				<option value="100">100</option>
 				<option value="180">180</option>
+				<option value="400">400</option>
 			</select>
 		</div>
-		<div class="field" style="max-width:140px;">
+		<div class="field" style="max-width:160px;">
 			<label for="sort">Sort by</label>
 			<select id="sort">
-				<option value="best">Best match (API)</option>
 				<option value="date">Newest first</option>
+				<option value="date_oldest">Oldest first</option>
+				<option value="best">Best match (API)</option>
 			</select>
 		</div>
 	</section>
 
 	<section class="bar">
-		<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-			<button id="btn-search">Search (snapshot)</button>
-			<button id="btn-refresh" class="secondary">Refresh all portals (headless)</button>
+		<div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+			<button id="btn-cached">Load cached</button>
+			<button id="btn-live" class="secondary">Fetch live</button>
+			<button id="btn-refresh" class="secondary">Refresh all portals</button>
 			<button id="btn-debug" class="secondary">Sources debug</button>
+			<label style="display:flex;align-items:center;gap:0.35rem;font-size:0.75rem;color:#9ca3af;">
+				<input type="checkbox" id="live-on-filter" style="margin:0;">
+				Live update when changing filters
+			</label>
 		</div>
 		<div id="status"></div>
 	</section>
@@ -121,17 +129,23 @@
 		<aside class="sidebar">
 			<h2>Sources &amp; portals</h2>
 			<div class="sidebar-section" id="sources-summary">
-				<small>Click "Sources debug" to see which portals are currently responding.</small>
+				<p id="sources-count-line" style="margin:0 0 0.25rem 0;"><span class="badge"><strong id="sources-total">0</strong> jobs</span> from <strong id="sources-num">0</strong> sources</p>
+				<small>Use chips above to filter by source. "Load cached" = fast; "Fetch live" = fresh from API.</small>
+			</div>
+			<div class="sidebar-section" id="sources-list-wrap">
+				<p style="margin:0 0 0.35rem 0;"><strong>Sources in this result</strong></p>
+				<ul id="sources-list" style="list-style:none;padding:0;margin:0;font-size:0.78rem;"></ul>
 			</div>
 			<div class="sidebar-section" id="sources-detail"></div>
 			<div class="sidebar-section" style="margin-top:1rem;">
-				<p style="margin:0 0 0.25rem 0;"><strong>About this API</strong></p>
+				<p style="margin:0 0 0.25rem 0;"><strong>About</strong></p>
 				<p style="margin:0.1rem 0;">
-					Results currently come from remote-friendly boards like
 					<span class="pill">WeWorkRemotely</span>
 					<span class="pill">RemoteOK</span>
 					<span class="pill">Jobscollider</span>
-					and others. Some feeds (e.g. Indeed, Wellfound) may be blocked (403) and are skipped automatically.
+					<span class="pill">Remotive</span>
+					<span class="pill">Wellfound</span>
+					and others. "Sources debug" checks which portals respond.
 				</p>
 			</div>
 		</aside>
@@ -198,6 +212,27 @@
 				container.innerHTML = badges;
 			}
 
+			function updateSourcesSidebar() {
+				var totalEl = document.getElementById('sources-total');
+				var numEl = document.getElementById('sources-num');
+				var listEl = document.getElementById('sources-list');
+				if (totalEl) totalEl.textContent = allJobs.length;
+				var keys = Object.keys(sourceCounts || {});
+				if (numEl) numEl.textContent = keys.length;
+				if (!listEl) return;
+				if (!keys.length) {
+					listEl.innerHTML = '<li class="empty">No sources yet. Load cached or fetch live.</li>';
+					return;
+				}
+				var sorted = keys.sort(function (a, b) { return (sourceCounts[b] || 0) - (sourceCounts[a] || 0); });
+				var html = '';
+				sorted.forEach(function (src) {
+					var count = sourceCounts[src] || 0;
+					html += '<li style="margin:0.2rem 0;"><span class="dot dot-ok"></span>' + esc(src) + ' <strong>' + count + '</strong></li>';
+				});
+				listEl.innerHTML = html;
+			}
+
 			function renderSourceFilter() {
 				var el = document.getElementById('source-filter');
 				if (!el) return;
@@ -240,7 +275,14 @@
 						var db = new Date(b.date || 0).getTime();
 						return db - da;
 					});
+				} else if (sortMode === 'date_oldest') {
+					filteredJobs.sort(function (a, b) {
+						var da = new Date(a.date || 0).getTime();
+						var db = new Date(b.date || 0).getTime();
+						return da - db;
+					});
 				}
+				// 'best' keeps API order (already ranked)
 
 				updateSummary();
 				renderJobs();
@@ -327,6 +369,7 @@
 					sourceCounts = {};
 					updateSummary();
 					renderSourceFilter();
+					updateSourcesSidebar();
 					renderJobs();
 					return;
 				}
@@ -334,13 +377,42 @@
 				sourceCounts = data.sourceCounts || computeSourceCounts(allJobs);
 				updateSummary();
 				renderSourceFilter();
+				updateSourcesSidebar();
 				applyFilters();
-				setStatus('Loaded ' + (data.count || allJobs.length) + ' jobs from snapshot.');
+				setStatus('Loaded ' + (data.count || allJobs.length) + ' jobs (live).');
+			}
+
+			function handleCachedResponse(data) {
+				if (!data || !data.ok || !Array.isArray(data.jobs)) {
+					setStatus('No cached data. Fetching live…');
+					callSnapshot();
+					return;
+				}
+				allJobs = data.jobs || [];
+				sourceCounts = data.sourceCounts || computeSourceCounts(allJobs);
+				updateSummary();
+				renderSourceFilter();
+				updateSourcesSidebar();
+				applyFilters();
+				setStatus('Loaded ' + (data.count || allJobs.length) + ' jobs (cached).');
+			}
+
+			function callCached() {
+				var p = readParams();
+				setStatus('Loading cached…');
+				fetch(base + '/api/jobs-cached?q=' + encodeURIComponent(p.q))
+					.then(function (r) { return r.ok ? r.json() : null; })
+					.then(handleCachedResponse)
+					.catch(function (err) {
+						console.error('jobs-cached network error', err);
+						setStatus('Cache failed. Fetching live…');
+						callSnapshot();
+					});
 			}
 
 			function callSnapshot() {
 				var p = readParams();
-				setStatus('Loading snapshot…');
+				setStatus('Fetching live results…');
 				fetch(base + '/api/jobs-snapshot?q=' + encodeURIComponent(p.q) +
 					'&days=' + encodeURIComponent(p.days) +
 					'&limit=' + encodeURIComponent(p.limit))
@@ -348,7 +420,7 @@
 					.then(handleSnapshotResponse)
 					.catch(function (err) {
 						console.error('jobs-snapshot network error', err);
-						setStatus('Network error calling jobs-snapshot.');
+						setStatus('Network error. Try Load cached.');
 					});
 			}
 
@@ -426,17 +498,30 @@
 					});
 			}
 
-			document.getElementById('btn-search').addEventListener('click', callSnapshot);
+			document.getElementById('btn-cached').addEventListener('click', callCached);
+			document.getElementById('btn-live').addEventListener('click', callSnapshot);
 			document.getElementById('btn-refresh').addEventListener('click', callRefresh);
 			document.getElementById('btn-debug').addEventListener('click', callSourcesDebug);
-			document.getElementById('sort').addEventListener('change', applyFilters);
+			document.getElementById('sort').addEventListener('change', function () {
+				applyFilters();
+				if (document.getElementById('live-on-filter') && document.getElementById('live-on-filter').checked) callSnapshot();
+			});
 			document.getElementById('detail-close').addEventListener('click', closeDetail);
 			document.getElementById('detail-modal').addEventListener('click', function (e) {
 				if (e.target === this) closeDetail();
 			});
 
-			// Initial load
-			callSnapshot();
+			function onFilterChange() {
+				applyFilters();
+				if (document.getElementById('live-on-filter') && document.getElementById('live-on-filter').checked) callSnapshot();
+			}
+			document.getElementById('q').addEventListener('change', onFilterChange);
+			document.getElementById('q').addEventListener('blur', onFilterChange);
+			document.getElementById('days').addEventListener('change', onFilterChange);
+			document.getElementById('limit').addEventListener('change', onFilterChange);
+
+			// Initial load: cached first (fast)
+			callCached();
 		})();
 	</script>
 </body>
