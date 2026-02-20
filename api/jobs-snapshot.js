@@ -154,14 +154,20 @@ async function fetchJson(url, opts = {}) {
 	}
 }
 
-// Hosts we're allowed to fetch RSS from directly (same as rss.js allowlist)
+// Hosts we're allowed to fetch RSS from directly (aligned with job-search-api + rss.js allowlist)
 const RSS_ALLOWED_HOSTS = new Set([
 	'remoteok.io', 'www.remoteok.io', 'remoteok.com', 'www.remoteok.com',
 	'weworkremotely.com', 'www.weworkremotely.com',
 	'remotive.com', 'www.remotive.com',
 	'jobscollider.com', 'www.jobscollider.com',
 	'wellfound.com', 'www.wellfound.com',
-	'indeed.com', 'www.indeed.com', 'rss.indeed.com'
+	'indeed.com', 'www.indeed.com', 'rss.indeed.com',
+	'stackoverflow.com', 'www.stackoverflow.com',
+	'remote.co', 'www.remote.co',
+	'jobspresso.co', 'www.jobspresso.co',
+	'himalayas.app', 'www.himalayas.app',
+	'authenticjobs.com', 'www.authenticjobs.com',
+	'rssjobs.app', 'www.rssjobs.app'
 ]);
 
 function stripTag(xml, tag) {
@@ -403,11 +409,12 @@ module.exports = async (req, res) => {
 	}
 
 	// 1) RemoteOK JSON API (fast) — API returns array; first element can be metadata
+	// Increased limit to fetch more jobs (was unlimited, now process up to 200)
 	const remoteOk = await fetchJson('https://remoteok.com/api');
 	const remoteOkList = Array.isArray(remoteOk)
 		? remoteOk
 		: (remoteOk && Array.isArray(remoteOk.jobs) ? remoteOk.jobs : []);
-	for (let i = 0; i < remoteOkList.length; i++) {
+	for (let i = 0; i < Math.min(remoteOkList.length, 200); i++) {
 		const it = remoteOkList[i];
 		if (!it || typeof it !== 'object' || !it.position || !it.url) continue;
 			const full = (it.position + ' ' + (it.description || '') + ' ' + (Array.isArray(it.tags) ? it.tags.join(' ') : ''));
@@ -432,10 +439,11 @@ module.exports = async (req, res) => {
 	}
 
 	// 2) Remotive public API (fast, but rate limited sometimes)
+	// Increased limit from 80 to 150 for more results
 	const remotive = await fetchJson('https://remotive.com/api/remote-jobs?search=' + encodeURIComponent(q));
 	const remotiveJobs = remotive && (remotive.jobs || remotive['remote-jobs'] || remotive.results);
 	if (Array.isArray(remotiveJobs)) {
-		for (let i = 0; i < Math.min(remotiveJobs.length, 80); i++) {
+		for (let i = 0; i < Math.min(remotiveJobs.length, 150); i++) {
 			const it = remotiveJobs[i];
 			if (!it || !it.title || !it.url) continue;
 			const full = (it.title + ' ' + (it.description_plain || it.description || '') + ' ' + (Array.isArray(it.tags) ? it.tags.join(' ') : ''));
@@ -460,11 +468,14 @@ module.exports = async (req, res) => {
 		}
 	}
 
-	// 3) RSS sources — fetch directly (no self-call) so we always get multiple sources
+	// 3) RSS sources — fetch directly (aligned with job-search-api 14 RSS sources)
+	const searchEnc = encodeURIComponent(q.replace(/\s+/g, '+'));
+	// Expanded RSS feeds list - more sources and variations for better coverage
 	const rssFeeds = [
 		{ source: 'remotive', url: 'https://remotive.com/feed' },
 		{ source: 'remotive', url: 'https://remotive.com/remote-jobs/feed/data' },
 		{ source: 'remotive', url: 'https://remotive.com/remote-jobs/feed/ai-ml' },
+		{ source: 'remotive', url: 'https://remotive.com/remote-jobs/feed/analytics' },
 		{ source: 'weworkremotely', url: 'https://weworkremotely.com/remote-jobs.rss' },
 		{ source: 'jobscollider', url: 'https://jobscollider.com/remote-jobs.rss' },
 		{ source: 'jobscollider', url: 'https://jobscollider.com/remote-data-jobs.rss' },
@@ -473,13 +484,37 @@ module.exports = async (req, res) => {
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-science&remote=true' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-analyst&remote=true' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=business-intelligence&remote=true' },
-		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=data+analyst&l=remote&radius=0' },
-		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=data+scientist&l=remote&radius=0' }
+		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=analytics-engineer&remote=true' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=' + searchEnc + '&l=remote&radius=0' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=data+scientist&l=remote&radius=0' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=business+analyst&l=remote&radius=0' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=analytics+engineer&l=remote&radius=0' },
+		{ source: 'stackoverflow', url: 'https://stackoverflow.com/jobs/feed?q=' + searchEnc + '&l=remote&d=20&u=Km' },
+		{ source: 'stackoverflow', url: 'https://stackoverflow.com/jobs/feed?q=data+analyst&l=remote&d=20&u=Km' },
+		{ source: 'remote_co', url: 'https://remote.co/remote-jobs/feed/' },
+		{ source: 'jobspresso', url: 'https://jobspresso.co/remote-jobs/feed/' },
+		{ source: 'himalayas', url: 'https://himalayas.app/jobs/feed' },
+		{ source: 'authentic_jobs', url: 'https://authenticjobs.com/rss/' }
 	];
 
+	// Optional: rssjobs.app feed (role + location). Create a feed at https://rssjobs.app/ (LinkedIn, Stepstone, Glassdoor), then pass the feed URL as ?rssjobs=<url>
+	const rssjobsUrl = (req.query && req.query.rssjobs) ? String(req.query.rssjobs).trim() : '';
+	if (rssjobsUrl && rssjobsUrl.startsWith('http')) {
+		try {
+			const u = new URL(rssjobsUrl);
+			const host = (u.hostname || '').toLowerCase();
+			if (host === 'rssjobs.app' || host === 'www.rssjobs.app') {
+				rssFeeds.push({ source: 'rssjobs', url: rssjobsUrl });
+			}
+		} catch (e) { /* ignore invalid URL */ }
+	}
+
+	// Increased RSS feed limits for more results (50 -> 100-150 per feed)
 	const rssResults = await Promise.allSettled(rssFeeds.map(async (f) => {
 		try {
-			const items = await fetchRssDirect(f.url, 50);
+			// Use higher limits for popular sources
+			const limit = (f.source === 'indeed' || f.source === 'wellfound' || f.source === 'remotive') ? 150 : 100;
+			const items = await fetchRssDirect(f.url, limit);
 			return { source: f.source, items, url: f.url };
 		} catch (e) {
 			return { source: f.source, items: [], error: e.message, url: f.url };
@@ -523,8 +558,9 @@ module.exports = async (req, res) => {
 	});
 
 	// 4) WorkingNomads (public exposed API via our own proxy)
+	// Increased count from 80 to 150 for more results
 	const wn = baseUrl
-		? await fetchJson(baseUrl + '/api/workingnomads?q=' + encodeURIComponent(q) + '&count=80')
+		? await fetchJson(baseUrl + '/api/workingnomads?q=' + encodeURIComponent(q) + '&count=150')
 		: null;
 		if (wn && wn.ok && Array.isArray(wn.jobs)) {
 		wn.jobs.forEach((it) => {

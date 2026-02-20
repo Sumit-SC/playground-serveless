@@ -10,7 +10,7 @@ const MAX_COUNT = 50;
 const TIMEOUT_MS = 12_000;
 const MAX_XML_BYTES = 1_000_000; // 1MB
 
-// Keep this tight. Add more hosts only when you explicitly use them.
+// Keep this tight. Aligned with jobs-snapshot RSS sources (job-search-api parity).
 const ALLOWED_HOSTS = new Set([
 	'remoteok.io', 'www.remoteok.io', 'remoteok.com', 'www.remoteok.com',
 	'weworkremotely.com', 'www.weworkremotely.com',
@@ -18,6 +18,12 @@ const ALLOWED_HOSTS = new Set([
 	'jobscollider.com', 'www.jobscollider.com',
 	'stackoverflow.com', 'www.stackoverflow.com',
 	'wellfound.com', 'www.wellfound.com',
+	'indeed.com', 'www.indeed.com', 'rss.indeed.com',
+	'remote.co', 'www.remote.co',
+	'jobspresso.co', 'www.jobspresso.co',
+	'himalayas.app', 'www.himalayas.app',
+	'authenticjobs.com', 'www.authenticjobs.com',
+	'rssjobs.app', 'www.rssjobs.app',
 	'towardsdatascience.com', 'www.towardsdatascience.com',
 	'medium.com', 'www.medium.com'
 ]);
