@@ -378,6 +378,7 @@ module.exports = async (req, res) => {
 	const q = (req.query && req.query.q) ? String(req.query.q).trim() : 'data analyst';
 	const days = clamp(parseInt(String((req.query && req.query.days) || DEFAULT_DAYS), 10) || DEFAULT_DAYS, 1, 30);
 	const limit = clamp(parseInt(String((req.query && req.query.limit) || DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 10, MAX_LIMIT);
+	const location = (req.query && req.query.location) ? String(req.query.location).trim() : 'remote';
 
 	const proto = (req.headers['x-forwarded-proto'] || 'https');
 	const host = req.headers['x-forwarded-host'] || req.headers.host;
@@ -468,9 +469,10 @@ module.exports = async (req, res) => {
 		}
 	}
 
-	// 3) RSS sources — fetch directly (aligned with job-search-api 14 RSS sources)
+	// 3) RSS sources — fetch directly; use location param for Indeed/Stack Overflow
 	const searchEnc = encodeURIComponent(q.replace(/\s+/g, '+'));
-	// Expanded RSS feeds list - more sources and variations for better coverage
+	const locEnc = encodeURIComponent(String(location).replace(/\s+/g, '+'));
+	// Expanded RSS feeds: RemoteOK, Remotive, WeWorkRemotely, Jobscollider, Wellfound, Indeed, Stack Overflow, Remote.co, Jobspresso, Himalayas, Authentic Jobs
 	const rssFeeds = [
 		{ source: 'remotive', url: 'https://remotive.com/feed' },
 		{ source: 'remotive', url: 'https://remotive.com/remote-jobs/feed/data' },
@@ -485,12 +487,12 @@ module.exports = async (req, res) => {
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-analyst&remote=true' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=business-intelligence&remote=true' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=analytics-engineer&remote=true' },
-		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=' + searchEnc + '&l=remote&radius=0' },
-		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=data+scientist&l=remote&radius=0' },
-		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=business+analyst&l=remote&radius=0' },
-		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=analytics+engineer&l=remote&radius=0' },
-		{ source: 'stackoverflow', url: 'https://stackoverflow.com/jobs/feed?q=' + searchEnc + '&l=remote&d=20&u=Km' },
-		{ source: 'stackoverflow', url: 'https://stackoverflow.com/jobs/feed?q=data+analyst&l=remote&d=20&u=Km' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=' + searchEnc + '&l=' + locEnc + '&radius=0' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=data+scientist&l=' + locEnc + '&radius=0' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=business+analyst&l=' + locEnc + '&radius=0' },
+		{ source: 'indeed', url: 'https://rss.indeed.com/rss?q=analytics+engineer&l=' + locEnc + '&radius=0' },
+		{ source: 'stackoverflow', url: 'https://stackoverflow.com/jobs/feed?q=' + searchEnc + '&l=' + locEnc + '&d=20&u=Km' },
+		{ source: 'stackoverflow', url: 'https://stackoverflow.com/jobs/feed?q=data+analyst&l=' + locEnc + '&d=20&u=Km' },
 		{ source: 'remote_co', url: 'https://remote.co/remote-jobs/feed/' },
 		{ source: 'jobspresso', url: 'https://jobspresso.co/remote-jobs/feed/' },
 		{ source: 'himalayas', url: 'https://himalayas.app/jobs/feed' },
@@ -785,6 +787,7 @@ module.exports = async (req, res) => {
 		query: q,
 		days,
 		limit,
+		location,
 		count: jobs.length,
 		sources,
 		sourceCounts,
