@@ -203,12 +203,15 @@ module.exports = async function handler(req, res) {
 	}
 	var source = getSource(req);
 
-	// Search: s=query
+	// Search: s=query, optional y=year to narrow results (e.g. "Reply 1988" + y=2015 for the drama)
 	const searchQuery = typeof req.query.s === 'string' ? req.query.s.trim() : '';
+	const yearParam = typeof req.query.y === 'string' ? req.query.y.trim() : '';
+	const year = /^(19|20)\d{2}$/.test(yearParam) ? yearParam : '';
 	if (searchQuery && searchQuery.length <= MAX_TITLE_LENGTH) {
 		recordRequest('search', getCategory(), source);
 		try {
-			const url = OMDB_BASE + '?s=' + encodeURIComponent(searchQuery) + '&apikey=' + encodeURIComponent(key);
+			let url = OMDB_BASE + '?s=' + encodeURIComponent(searchQuery) + '&apikey=' + encodeURIComponent(key);
+			if (year) url += '&y=' + encodeURIComponent(year);
 			const r = await fetch(url);
 			const data = await r.json().catch(function () { return null; });
 			const list = (data && data.Search && Array.isArray(data.Search)) ? data.Search : [];
