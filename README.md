@@ -4,6 +4,14 @@
 
 ---
 
+## Docs
+
+- **Wiki/docs:** [docs/](docs/README.md) — API overview, quick links to OMDb, jobs, and full API reference.
+- **Full API reference:** [API reference (all endpoints)](#api-reference-all-endpoints) below — endpoint table, env vars, example `curl` calls.
+- **All API responses are JSON** — no HTML or app code in API response bodies.
+
+---
+
 # OMDb API proxy (separate backend)
 
 Minimal serverless backend that calls OMDb with your API key and returns only safe data. Use this **repo by itself** on Vercel so your main site repo stays front-end only (e.g. GitHub Pages).
