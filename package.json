@@ -1,5 +1,5 @@
 {
-  "name": "omdb-proxy",
+  "name": "playground-serveless",
   "version": "1.0.0",
   "private": true,
   "description": "Serverless proxies (OMDb + jobs RSS/snapshot)",

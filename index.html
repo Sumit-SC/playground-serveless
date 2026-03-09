@@ -593,7 +593,7 @@
 				.then(function (r) { return r.ok ? r.json() : null; })
 				.then(function (data) {
 					if (!data || !data.ok) {
-						setJobsStatus('Cached API not available (may be 404 until latest deploy). Falling back to snapshot.',);
+						setJobsStatus('Cached API not available (may be 404 until latest deploy). Falling back to snapshot.');
 						console.warn('jobs-cached error', data);
 						callJobsSnapshot();
 						return;
@@ -643,22 +643,25 @@
 					var statsBox = document.getElementById('jobs-stats');
 					var summaryEl = document.getElementById('jobs-summary');
 					var sourcesEl = document.getElementById('jobs-sources');
-					if (statsBox && summaryEl && sourcesEl) {
-						statsBox.style.display = 'block';
-						summaryEl.innerHTML = '<p><strong>Sources debug:</strong> ' + Object.keys(data.sources || {}).length + ' sources checked.</p>';
-						var html = '';
-						Object.keys(data.sources || {}).forEach(function (name) {
-							var s = data.sources[name];
-							var ok = s && s.ok;
-							var sample = (s && s.sampleTitle) ? esc(s.sampleTitle) : '';
-							html += '<div class="hint" style="margin-bottom:0.25rem;">' +
-								'<strong style="color:' + (ok ? '#22c55e' : '#f97316') + ';">' + esc(name) + '</strong>: ' +
-								(ok ? 'OK' : 'ERROR') +
-								(sample ? ' — ' + sample : '') +
-								'</div>';
-						});
-						sourcesEl.innerHTML = html;
-					}
+				if (statsBox && summaryEl && sourcesEl) {
+					statsBox.style.display = 'block';
+					var allResults = [].concat(data.results.api || [], data.results.rss || [], data.results.proxy || []);
+					var working = allResults.filter(function (r) { return r && r.ok; }).length;
+					summaryEl.innerHTML = '<p><strong>Sources debug:</strong> ' + allResults.length + ' sources checked, ' + working + ' working.</p>';
+					var html = '';
+					allResults.forEach(function (r) {
+						if (!r) return;
+						var name = r.source || 'unknown';
+						var ok = !!r.ok;
+						var sample = (r.sample && r.sample.length) ? esc(String(r.sample[0])) : '';
+						html += '<div class="hint" style="margin-bottom:0.25rem;">' +
+							'<strong style="color:' + (ok ? '#22c55e' : '#f97316') + ';">' + esc(name) + '</strong>: ' +
+							(ok ? 'OK (' + (r.count || 0) + ')' : 'ERROR' + (r.error ? ' — ' + esc(r.error) : '')) +
+							(sample ? ' — ' + sample : '') +
+							'</div>';
+					});
+					sourcesEl.innerHTML = html;
+				}
 					setJobsStatus('Sources debug loaded. See list below.');
 				})
 				.catch(function (err) {

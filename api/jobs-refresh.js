@@ -23,6 +23,7 @@ module.exports = async (req, res) => {
 	const days = (req.query && req.query.days) ? parseInt(String(req.query.days), 10) : 3;
 	const location = (req.query && req.query.location) ? String(req.query.location).trim() : 'remote';
 	const limit = Math.min(400, parseInt(String(req.query.limit || '400'), 10) || 400);
+	const sources = (req.query && req.query.sources) ? String(req.query.sources).trim() : '';
 
 	const headlessEnabled = String(process.env.ENABLE_HEADLESS || '').trim() === '1';
 	let jobs = [];
@@ -45,7 +46,8 @@ module.exports = async (req, res) => {
 	if (jobs.length === 0) {
 		// Use snapshot aggregation (RSS + RemoteOK + Remotive + WorkingNomads) so refresh always returns data
 		try {
-			const snapshotUrl = baseUrl + '/api/jobs-snapshot?q=' + encodeURIComponent(q) + '&days=' + days + '&limit=' + limit + '&location=' + encodeURIComponent(location);
+			let snapshotUrl = baseUrl + '/api/jobs-snapshot?q=' + encodeURIComponent(q) + '&days=' + days + '&limit=' + limit + '&location=' + encodeURIComponent(location);
+		if (sources) snapshotUrl += '&sources=' + encodeURIComponent(sources);
 			const snapRes = await fetch(snapshotUrl, { signal: AbortSignal.timeout(45000) });
 			const snapData = await snapRes.json();
 			if (snapData && snapData.ok && Array.isArray(snapData.jobs)) {

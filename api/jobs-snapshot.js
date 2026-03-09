@@ -380,6 +380,11 @@ module.exports = async (req, res) => {
 	const limit = clamp(parseInt(String((req.query && req.query.limit) || DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 10, MAX_LIMIT);
 	const location = (req.query && req.query.location) ? String(req.query.location).trim() : 'remote';
 
+	// Optional: comma-separated source IDs to include (if empty, all sources run)
+	const sourcesParam = (req.query && req.query.sources) ? String(req.query.sources).trim() : '';
+	const sourceFilter = sourcesParam ? new Set(sourcesParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)) : null;
+	const wantSource = (name) => !sourceFilter || sourceFilter.has(name);
+
 	const proto = (req.headers['x-forwarded-proto'] || 'https');
 	const host = req.headers['x-forwarded-host'] || req.headers.host;
 	const baseUrl = (host && (proto + '://' + host)) || '';
@@ -411,7 +416,7 @@ module.exports = async (req, res) => {
 
 	// 1) RemoteOK JSON API (fast) — API returns array; first element can be metadata
 	// Increased limit to fetch more jobs (was unlimited, now process up to 200)
-	const remoteOk = await fetchJson('https://remoteok.com/api');
+	const remoteOk = wantSource('remoteok') ? await fetchJson('https://remoteok.com/api') : null;
 	const remoteOkList = Array.isArray(remoteOk)
 		? remoteOk
 		: (remoteOk && Array.isArray(remoteOk.jobs) ? remoteOk.jobs : []);
@@ -441,7 +446,7 @@ module.exports = async (req, res) => {
 
 	// 2) Remotive public API (fast, but rate limited sometimes)
 	// Increased limit from 80 to 150 for more results
-	const remotive = await fetchJson('https://remotive.com/api/remote-jobs?search=' + encodeURIComponent(q));
+	const remotive = wantSource('remotive') ? await fetchJson('https://remotive.com/api/remote-jobs?search=' + encodeURIComponent(q)) : null;
 	const remotiveJobs = remotive && (remotive.jobs || remotive['remote-jobs'] || remotive.results);
 	if (Array.isArray(remotiveJobs)) {
 		for (let i = 0; i < Math.min(remotiveJobs.length, 150); i++) {
@@ -472,8 +477,7 @@ module.exports = async (req, res) => {
 	// 3) RSS sources — fetch directly; use location param for Indeed/Stack Overflow
 	const searchEnc = encodeURIComponent(q.replace(/\s+/g, '+'));
 	const locEnc = encodeURIComponent(String(location).replace(/\s+/g, '+'));
-	// Expanded RSS feeds: RemoteOK, Remotive, WeWorkRemotely, Jobscollider, Wellfound, Indeed, Stack Overflow, Remote.co, Jobspresso, Himalayas, Authentic Jobs
-	const rssFeeds = [
+	const allRssFeeds = [
 		{ source: 'remotive', url: 'https://remotive.com/feed' },
 		{ source: 'remotive', url: 'https://remotive.com/remote-jobs/feed/data' },
 		{ source: 'remotive', url: 'https://remotive.com/remote-jobs/feed/ai-ml' },
@@ -496,8 +500,10 @@ module.exports = async (req, res) => {
 		{ source: 'remote_co', url: 'https://remote.co/remote-jobs/feed/' },
 		{ source: 'jobspresso', url: 'https://jobspresso.co/remote-jobs/feed/' },
 		{ source: 'himalayas', url: 'https://himalayas.app/jobs/feed' },
-		{ source: 'authentic_jobs', url: 'https://authenticjobs.com/rss/' }
+		{ source: 'authentic_jobs', url: 'https://authenticjobs.com/rss/' },
+		{ source: 'hn_jobs', url: 'https://hnrss.org/jobs' }
 	];
+	const rssFeeds = allRssFeeds.filter(f => wantSource(f.source));
 
 	// Optional: rssjobs.app feed (role + location). Create a feed at https://rssjobs.app/ (LinkedIn, Stepstone, Glassdoor), then pass the feed URL as ?rssjobs=<url>
 	const rssjobsUrl = (req.query && req.query.rssjobs) ? String(req.query.rssjobs).trim() : '';
@@ -560,8 +566,7 @@ module.exports = async (req, res) => {
 	});
 
 	// 4) WorkingNomads (public exposed API via our own proxy)
-	// Increased count from 80 to 150 for more results
-	const wn = baseUrl
+	const wn = (wantSource('workingnomads') && baseUrl)
 		? await fetchJson(baseUrl + '/api/workingnomads?q=' + encodeURIComponent(q) + '&count=150')
 		: null;
 		if (wn && wn.ok && Array.isArray(wn.jobs)) {
@@ -587,6 +592,100 @@ module.exports = async (req, res) => {
 				_roleTier: role.tier
 			}));
 		});
+	}
+
+	// 4b) hiring.cafe JSON API (rich data with seniority, skills, compensation)
+	if (wantSource('hiring_cafe')) {
+		try {
+			const hcData = await fetchJson('https://hiring.cafe/api/search-jobs?searchQuery=' + encodeURIComponent(q) + '&workplaceTypes=Remote', { timeout: 20000, headers: { 'Referer': 'https://hiring.cafe/' } });
+			const hcResults = (hcData && hcData.results) || [];
+			for (let i = 0; i < Math.min(hcResults.length, 200); i++) {
+				const item = hcResults[i];
+				if (!item || item.is_expired) continue;
+				const ji = item.job_information || {};
+				const vpd = item.v5_processed_job_data || {};
+				const ec = item.enriched_company_data || {};
+				const title = ji.title || vpd.core_job_title || '';
+				const url = item.apply_url || '';
+				if (!title || !url) continue;
+				const company = ec.name || vpd.company_name || 'Unknown';
+				const loc = vpd.formatted_workplace_location || 'Remote';
+				const full = title + ' ' + (vpd.requirements_summary || '') + ' ' + (vpd.technical_tools || []).join(' ');
+				if (!containsAny(full, keywords)) continue;
+				const role = roleTierRank(title, vpd.requirements_summary || '');
+				if (role.score < 0) continue;
+				const expMatch = experienceLevelMatch(title, vpd.requirements_summary || '');
+				const locScore = locationRank(loc);
+				jobs.push(normalizeJob({
+					id: 'hiringcafe_' + (item.id || String(url).replace(/[^a-zA-Z0-9]/g, '_')),
+					title, company, location: loc, url,
+					description: (vpd.requirements_summary || '').slice(0, 500),
+					source: 'hiring_cafe',
+					date: vpd.estimated_publish_date || nowIso(),
+					tags: (vpd.technical_tools || []).slice(0, 5),
+					_rank: role.score + locScore + expMatch.score,
+					_roleTier: role.tier
+				}));
+			}
+		} catch (e) { /* hiring.cafe optional */ }
+	}
+
+	// 4c) Arbeitnow JSON API (European + remote jobs)
+	if (wantSource('arbeitnow')) {
+		try {
+			const abData = await fetchJson('https://www.arbeitnow.com/api/job-board-api', { timeout: 15000 });
+			const abItems = (abData && abData.data) || [];
+			for (let i = 0; i < Math.min(abItems.length, 150); i++) {
+				const it = abItems[i];
+				if (!it || !it.title || !it.url) continue;
+				const full = it.title + ' ' + (it.description || '') + ' ' + (it.tags || []).join(' ');
+				if (!containsAny(full, keywords)) continue;
+				const role = roleTierRank(it.title, it.description || '');
+				if (role.score < 0) continue;
+				const expMatch = experienceLevelMatch(it.title, it.description || '');
+				const locScore = locationRank(it.location || 'Europe');
+				jobs.push(normalizeJob({
+					id: 'arbeitnow_' + String(it.url).replace(/[^a-zA-Z0-9]/g, '_'),
+					title: it.title, company: it.company_name || 'Unknown',
+					location: it.location || 'Europe', url: it.url,
+					description: (it.description || '').slice(0, 500),
+					source: 'arbeitnow',
+					date: it.created_at || nowIso(),
+					tags: (it.tags || []).slice(0, 5),
+					_rank: role.score + locScore + expMatch.score,
+					_roleTier: role.tier
+				}));
+			}
+		} catch (e) { /* arbeitnow optional */ }
+	}
+
+	// 4d) Jobicy JSON API (remote jobs with tag search)
+	if (wantSource('jobicy')) {
+		try {
+			const jcData = await fetchJson('https://jobicy.com/api/v2/remote-jobs?count=50&tag=' + encodeURIComponent(q), { timeout: 15000 });
+			const jcItems = (jcData && jcData.jobs) || [];
+			for (let i = 0; i < jcItems.length; i++) {
+				const it = jcItems[i];
+				if (!it || !it.jobTitle || !it.url) continue;
+				const full = it.jobTitle + ' ' + (it.jobExcerpt || '') + ' ' + (it.jobDescription || '');
+				if (!containsAny(full, keywords)) continue;
+				const role = roleTierRank(it.jobTitle, it.jobExcerpt || '');
+				if (role.score < 0) continue;
+				const expMatch = experienceLevelMatch(it.jobTitle, it.jobExcerpt || '');
+				const locScore = locationRank(it.jobGeo || 'Remote');
+				jobs.push(normalizeJob({
+					id: 'jobicy_' + String(it.url).replace(/[^a-zA-Z0-9]/g, '_'),
+					title: it.jobTitle, company: it.companyName || 'Unknown',
+					location: it.jobGeo || 'Remote', url: it.url,
+					description: (it.jobExcerpt || '').slice(0, 500),
+					source: 'jobicy',
+					date: it.pubDate || nowIso(),
+					tags: ['api'],
+					_rank: role.score + locScore + expMatch.score,
+					_roleTier: role.tier
+				}));
+			}
+		} catch (e) { /* jobicy optional */ }
 	}
 
 	// 5) Headless browser (WeWorkRemotely) — only when ENABLE_HEADLESS=1; runs in parallel with short timeout

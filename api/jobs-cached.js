@@ -10,7 +10,7 @@
 
 const { kv } = require('@vercel/kv');
 
-const CACHE_KEY = 'jobs:scraped:all-portals';
+const CACHE_KEY = 'jobs:scraped:all';
 
 function hasKv() {
 	return process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
