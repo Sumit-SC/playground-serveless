@@ -43,7 +43,7 @@ async function testEndpoint(name, url) {
 }
 
 async function main() {
-	console.log('🧪 Testing Job APIs\n');
+	console.log('🧪 Testing APIs\n');
 	console.log('='.repeat(60));
 	
 	// Test 1: jobs-snapshot (should work, uses API/RSS)
@@ -70,6 +70,16 @@ async function main() {
 	console.log(`   jobs-snapshot: ${snapshot.ok ? '✅ Working' : '❌ Failed'}`);
 	console.log(`   jobs-cached: ${cached.ok ? '✅ Working' : '❌ Failed'}`);
 	console.log(`   headless-scrape-all-portals: ${headless.ok ? '✅ Working' : '❌ Failed/Disabled'}`);
+
+	// Test 4: Google News headlines (new RSS helper)
+	const news = await testEndpoint(
+		'news-google (US)',
+		`${BASE_URL}/api/news-google?region=US&count=10`
+	);
+	const newsIn = await testEndpoint(
+		'news-google (IN)',
+		`${BASE_URL}/api/news-google?region=IN&count=10`
+	);
 	
 	if (snapshot.ok && snapshot.data) {
 		console.log(`\n📈 jobs-snapshot sources: ${snapshot.data.sources?.length || 0}`);
