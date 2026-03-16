@@ -598,7 +598,8 @@ module.exports = async (req, res) => {
 	if (wantSource('hiring_cafe')) {
 		try {
 			const hcData = await fetchJson('https://hiring.cafe/api/search-jobs?searchQuery=' + encodeURIComponent(q) + '&workplaceTypes=Remote', { timeout: 20000, headers: { 'Referer': 'https://hiring.cafe/' } });
-			const hcResults = (hcData && hcData.results) || [];
+			let hcResults = (hcData && hcData.results) || [];
+			if (!Array.isArray(hcResults)) hcResults = [];
 			for (let i = 0; i < Math.min(hcResults.length, 200); i++) {
 				const item = hcResults[i];
 				if (!item || item.is_expired) continue;
@@ -883,6 +884,7 @@ module.exports = async (req, res) => {
 
 	return res.status(200).json({
 		ok: true,
+		generatedAt: nowIso(),
 		query: q,
 		days,
 		limit,

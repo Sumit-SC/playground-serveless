@@ -79,6 +79,7 @@ module.exports = async (req, res) => {
 
 	return res.status(200).json({
 		ok: true,
+		generatedAt: new Date().toISOString(),
 		message: fromSnapshot ? 'Fetched from RSS + APIs (snapshot)' : 'Scraping completed',
 		query: q,
 		days,
