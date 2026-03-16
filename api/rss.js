@@ -25,7 +25,15 @@ const ALLOWED_HOSTS = new Set([
 	'authenticjobs.com', 'www.authenticjobs.com',
 	'rssjobs.app', 'www.rssjobs.app',
 	'towardsdatascience.com', 'www.towardsdatascience.com',
-	'medium.com', 'www.medium.com'
+	'medium.com', 'www.medium.com',
+	// Trends/news feeds
+	'news.google.com',
+	'torrentfreak.com', 'www.torrentfreak.com',
+	'xda-developers.com', 'www.xda-developers.com',
+	'visualcapitalist.com', 'www.visualcapitalist.com'
+	,
+	// Resources live feed
+	'freecodecamp.org', 'www.freecodecamp.org'
 ]);
 
 function isPrivateHost(hostname) {
