@@ -33,7 +33,9 @@ const ALLOWED_HOSTS = new Set([
 	'visualcapitalist.com', 'www.visualcapitalist.com'
 	,
 	// Resources live feed
-	'freecodecamp.org', 'www.freecodecamp.org'
+	'freecodecamp.org', 'www.freecodecamp.org',
+	// Alerts/disasters
+	'gdacs.org', 'www.gdacs.org'
 ]);
 
 function isPrivateHost(hostname) {
