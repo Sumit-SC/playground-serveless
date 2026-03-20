@@ -9,6 +9,80 @@ const DEFAULT_COUNT = 20;
 const MAX_COUNT = 50;
 const TIMEOUT_MS = 12_000;
 const MAX_XML_BYTES = 1_000_000; // 1MB
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+const crypto = require('crypto');
+
+// Optional KV cache (better consistency across serverless instances).
+// If KV isn't configured, we fall back to in-memory caching per instance.
+let kv = null;
+try {
+	({ kv } = require('@vercel/kv'));
+} catch (e) {
+	kv = null;
+}
+
+var __rssMemCache = new Map(); // cacheKey -> { ts, payload }
+
+function makeCacheKey(feedUrl, count) {
+	return 'rss:' + crypto.createHash('sha256').update(String(feedUrl) + '|' + String(count)).digest('hex');
+}
+
+function getMemCache(key) {
+	try {
+		var v = __rssMemCache.get(key);
+		if (!v) return null;
+		if (!v.ts || Date.now() - v.ts > CACHE_TTL_MS) {
+			__rssMemCache.delete(key);
+			return null;
+		}
+		return v.payload || null;
+	} catch (e) {
+		return null;
+	}
+}
+
+function setMemCache(key, payload) {
+	try {
+		__rssMemCache.set(key, { ts: Date.now(), payload: payload });
+	} catch (e) {
+		// ignore
+	}
+}
+
+async function getCached(cacheKey) {
+	// 1) In-memory (fast path)
+	var mem = getMemCache(cacheKey);
+	if (mem) return mem;
+
+	// 2) KV (optional)
+	if (kv && process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+		try {
+			var cached = await kv.get(cacheKey);
+			if (cached && cached.payload) return cached.payload;
+		} catch (e) {
+			// ignore KV errors; fall back to live fetch
+		}
+	}
+
+	return null;
+}
+
+async function setCached(cacheKey, payload) {
+	// 1) In-memory (always)
+	setMemCache(cacheKey, payload);
+
+	// 2) KV (optional)
+	if (kv && process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+		try {
+			// KV supports TTL via expirationTtl; keep aligned with CACHE_TTL_MS
+			var seconds = Math.max(60, Math.floor(CACHE_TTL_MS / 1000));
+			await kv.set(cacheKey, { payload: payload }, { expirationTtl: seconds });
+		} catch (e) {
+			// ignore KV errors
+		}
+	}
+}
 
 // Keep this tight. Aligned with jobs-snapshot RSS sources (job-search-api parity).
 const ALLOWED_HOSTS = new Set([
@@ -197,6 +271,18 @@ module.exports = async (req, res) => {
 	if (isPrivateHost(host)) return res.status(403).json({ ok: false, error: 'Host not allowed' });
 	if (!ALLOWED_HOSTS.has(host)) return res.status(403).json({ ok: false, error: 'Host not allowlisted' });
 
+	var cacheKey = makeCacheKey(feedUrl.toString(), count);
+	var cached = await getCached(cacheKey);
+	if (cached) {
+		return res.status(200).json({
+			ok: true,
+			feedUrl: feedUrl.toString(),
+			title: cached.title || '',
+			count: typeof cached.count === 'number' ? cached.count : (cached.items ? cached.items.length : 0),
+			items: cached.items || []
+		});
+	}
+
 	try {
 		const r = await fetchWithTimeout(feedUrl.toString());
 		if (!r.ok) return res.status(502).json({ ok: false, error: 'Fetch failed', status: r.status });
@@ -204,13 +290,15 @@ module.exports = async (req, res) => {
 		if (buf.length > MAX_XML_BYTES) return res.status(413).json({ ok: false, error: 'Feed too large' });
 		const xml = buf.toString('utf8');
 		const parsed = parseFeed(xml, count);
-		return res.status(200).json({
+		var payload = {
 			ok: true,
 			feedUrl: feedUrl.toString(),
 			title: parsed.title || '',
 			count: parsed.items.length,
 			items: parsed.items
-		});
+		};
+		await setCached(cacheKey, { title: payload.title, count: payload.count, items: payload.items });
+		return res.status(200).json(payload);
 	} catch (e) {
 		return res.status(500).json({ ok: false, error: 'Failed to fetch or parse feed', message: e && e.message ? e.message : String(e) });
 	}

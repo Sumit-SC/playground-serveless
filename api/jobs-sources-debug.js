@@ -76,6 +76,32 @@ async function testWorkingNomads(baseUrl) {
 	return { source: 'workingnomads', ok: true, count: jobs.length, sample: jobs.slice(0, 2).map(j => j.title) };
 }
 
+async function testHiringCafe() {
+	// Public endpoint used by /api/jobs-snapshot (may throttle; best-effort)
+	const url = 'https://hiring.cafe/api/search-jobs?searchQuery=data%20analyst&workplaceTypes=Remote';
+	const result = await fetchJson(url, { timeout: 20_000, headers: { 'Referer': 'https://hiring.cafe/' } });
+	if (!result.ok) return { source: 'hiring_cafe', ok: false, error: result.error };
+	const data = result.data;
+	const results = data && Array.isArray(data.results) ? data.results : [];
+	return { source: 'hiring_cafe', ok: true, count: results.length, sample: results.slice(0, 2).map(r => (r && r.job_information && r.job_information.title) || '').filter(Boolean) };
+}
+
+async function testArbeitnow() {
+	const result = await fetchJson('https://www.arbeitnow.com/api/job-board-api', { timeout: 15_000 });
+	if (!result.ok) return { source: 'arbeitnow', ok: false, error: result.error };
+	const data = result.data;
+	const items = data && Array.isArray(data.data) ? data.data : [];
+	return { source: 'arbeitnow', ok: true, count: items.length, sample: items.slice(0, 2).map(j => j.title) };
+}
+
+async function testJobicy() {
+	const result = await fetchJson('https://jobicy.com/api/v2/remote-jobs?count=10&tag=data%20analyst', { timeout: 15_000 });
+	if (!result.ok) return { source: 'jobicy', ok: false, error: result.error };
+	const data = result.data;
+	const items = data && Array.isArray(data.jobs) ? data.jobs : [];
+	return { source: 'jobicy', ok: true, count: items.length, sample: items.slice(0, 2).map(j => j.jobTitle) };
+}
+
 module.exports = async (req, res) => {
 	res.setHeader('Access-Control-Allow-Origin', '*');
 	res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -95,6 +121,9 @@ module.exports = async (req, res) => {
 	// Test APIs
 	results.api.push(await testRemoteOK());
 	results.api.push(await testRemotive());
+	results.api.push(await testHiringCafe());
+	results.api.push(await testArbeitnow());
+	results.api.push(await testJobicy());
 	
 	// Test RSS feeds
 	const rssFeeds = [
@@ -103,7 +132,8 @@ module.exports = async (req, res) => {
 		{ name: 'jobscollider', url: 'https://jobscollider.com/remote-jobs.rss' },
 		{ name: 'remoteok', url: 'https://remoteok.com/remote-jobs.rss' },
 		{ name: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-analyst&remote=true' },
-		{ name: 'indeed', url: 'https://rss.indeed.com/rss?q=data+analyst&l=remote&radius=0' }
+		{ name: 'indeed', url: 'https://rss.indeed.com/rss?q=data+analyst&l=remote&radius=0' },
+		{ name: 'hnrss_jobs', url: 'https://hnrss.org/jobs' }
 	];
 	
 	for (const feed of rssFeeds) {
