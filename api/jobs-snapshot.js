@@ -507,9 +507,7 @@ module.exports = async (req, res) => {
 
 	// rssjobs.app: stable way to expand "working boards" without brittle scraping.
 	// If user provides ?rssjobs=<custom_feed_url> we use it.
-	// Otherwise (when no explicit sources filter is applied), we auto-generate a feed for q+location.
 	const rssjobsUrlParam = (req.query && req.query.rssjobs) ? String(req.query.rssjobs).trim() : '';
-	const includeRssjobsAuto = !sourceFilter; // only when user didn't explicitly narrow sources
 
 	if (rssjobsUrlParam && rssjobsUrlParam.startsWith('http')) {
 		try {
@@ -519,10 +517,6 @@ module.exports = async (req, res) => {
 				rssFeeds.push({ source: 'rssjobs.app', url: rssjobsUrlParam });
 			}
 		} catch (e) { /* ignore invalid URL */ }
-	} else if (includeRssjobsAuto) {
-		// rssjobs.app expects: /feeds?keywords=<kw>&location=<loc>
-		const autoUrl = 'https://rssjobs.app/feeds?keywords=' + encodeURIComponent(q) + '&location=' + encodeURIComponent(location);
-		rssFeeds.push({ source: 'rssjobs.app', url: autoUrl });
 	}
 
 	// Increased RSS feed limits for more results (50 -> 100-150 per feed)
