@@ -164,9 +164,11 @@ const RSS_ALLOWED_HOSTS = new Set([
 	'indeed.com', 'www.indeed.com', 'rss.indeed.com',
 	'stackoverflow.com', 'www.stackoverflow.com',
 	'remote.co', 'www.remote.co',
+	'jobicy.com', 'www.jobicy.com',
 	'jobspresso.co', 'www.jobspresso.co',
 	'himalayas.app', 'www.himalayas.app',
 	'authenticjobs.com', 'www.authenticjobs.com',
+	'hnrss.org', 'www.hnrss.org',
 	'rssjobs.app', 'www.rssjobs.app'
 ]);
 
@@ -487,6 +489,7 @@ module.exports = async (req, res) => {
 		{ source: 'jobscollider', url: 'https://jobscollider.com/remote-data-jobs.rss' },
 		{ source: 'remoteok', url: 'https://remoteok.com/remote-jobs.rss' },
 		{ source: 'remoteok', url: 'https://remoteok.io/remote-jobs.rss' },
+		{ source: 'jobicy', url: 'https://jobicy.com/?feed=job_feed' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-science&remote=true' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=data-analyst&remote=true' },
 		{ source: 'wellfound', url: 'https://wellfound.com/jobs.rss?keywords=business-intelligence&remote=true' },
