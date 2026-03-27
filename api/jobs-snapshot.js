@@ -505,16 +505,24 @@ module.exports = async (req, res) => {
 	];
 	const rssFeeds = allRssFeeds.filter(f => wantSource(f.source));
 
-	// Optional: rssjobs.app feed (role + location). Create a feed at https://rssjobs.app/ (LinkedIn, Stepstone, Glassdoor), then pass the feed URL as ?rssjobs=<url>
-	const rssjobsUrl = (req.query && req.query.rssjobs) ? String(req.query.rssjobs).trim() : '';
-	if (rssjobsUrl && rssjobsUrl.startsWith('http')) {
+	// rssjobs.app: stable way to expand "working boards" without brittle scraping.
+	// If user provides ?rssjobs=<custom_feed_url> we use it.
+	// Otherwise (when no explicit sources filter is applied), we auto-generate a feed for q+location.
+	const rssjobsUrlParam = (req.query && req.query.rssjobs) ? String(req.query.rssjobs).trim() : '';
+	const includeRssjobsAuto = !sourceFilter; // only when user didn't explicitly narrow sources
+
+	if (rssjobsUrlParam && rssjobsUrlParam.startsWith('http')) {
 		try {
-			const u = new URL(rssjobsUrl);
+			const u = new URL(rssjobsUrlParam);
 			const host = (u.hostname || '').toLowerCase();
 			if (host === 'rssjobs.app' || host === 'www.rssjobs.app') {
-				rssFeeds.push({ source: 'rssjobs', url: rssjobsUrl });
+				rssFeeds.push({ source: 'rssjobs.app', url: rssjobsUrlParam });
 			}
 		} catch (e) { /* ignore invalid URL */ }
+	} else if (includeRssjobsAuto) {
+		// rssjobs.app expects: /feeds?keywords=<kw>&location=<loc>
+		const autoUrl = 'https://rssjobs.app/feeds?keywords=' + encodeURIComponent(q) + '&location=' + encodeURIComponent(location);
+		rssFeeds.push({ source: 'rssjobs.app', url: autoUrl });
 	}
 
 	// Increased RSS feed limits for more results (50 -> 100-150 per feed)
@@ -548,12 +556,12 @@ module.exports = async (req, res) => {
 			const role = roleTierRank(it.title || '', it.description || it.content || '');
 			if (role.score < 0) continue; // Filter out excluded roles
 			const expMatch = experienceLevelMatch(it.title || '', it.description || it.content || '');
-			const locScore = locationRank('Remote');
+			const locScore = locationRank(location || 'Remote');
 			jobs.push(normalizeJob({
 				id: src + '_rss_' + String(it.link || Math.random()).replace(/[^a-zA-Z0-9]/g, '_'),
 				title: String(it.title || '').trim(),
 				company: 'Unknown',
-				location: 'Remote',
+				location: String(location || 'Remote'),
 				url: it.link,
 				description: it.description || '',
 				source: src,
